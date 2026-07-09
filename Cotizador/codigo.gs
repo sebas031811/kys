@@ -55,17 +55,19 @@ const COL = {
   FREQUENCY: 12,
   INSTALLMENT: 13,
   IMAGE_URL: 14,
+  UPDATE: 15,
 };
 
 const IMAGE_MARKER = '{{IMAGEN_PRODUCTO}}';
 const IMAGE_TAG = 'KYS_PRODUCT_IMAGE';
 const BINDINGS_KEY = 'QUOTE_PLACEHOLDER_BINDINGS';
 const IMAGE_BOX_KEY = 'PRODUCT_IMAGE_BOX';
+const EDIT_TRIGGER_HANDLER = 'onEditInstallable';
 
 const SALES_HEADERS = [
   'N° Cotización', 'Fecha', 'Cliente', 'Identificación', 'Teléfono', 'Producto',
   'Valor Producto', 'Cuota Inicial', 'Saldo Financiado', 'Tasa Crédito (%)',
-  'N° Cuotas', 'Frecuencia', 'Valor Cuota', 'Link Imagen',
+  'N° Cuotas', 'Frecuencia', 'Valor Cuota', 'Link Imagen', 'Actualizar',
 ];
 
 // ─── Menú ────────────────────────────────────────────────────────────────────
@@ -74,6 +76,8 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Créditos')
     .addItem('Actualizar cotización', 'updateQuoteFromSelection')
+    .addItem('Agregar columna Actualizar (móvil)', 'addUpdateColumn')
+    .addItem('Activar actualización por casilla', 'activateCheckboxUpdate')
     .addSeparator()
     .addItem('Reparar fórmulas Ventas', 'repairSalesFormulas')
     .addItem('Reescanear placeholders Slides', 'rescanSlidePlaceholders')
@@ -99,17 +103,37 @@ function updateQuoteFromSelection() {
   const sale = getSelectedSale_();
   if (!sale) return;
 
-  var msg = '';
   try {
-    const result = updatePresentation_(sale);
-    msg = '\n\nPresentación:\n' + result.url;
+    const result = updateQuoteForRow_(sale.row);
+    var msg = '\n\nPresentación:\n' + result.url;
     if (result.imageNote) msg += '\n\nImagen: ' + result.imageNote;
+    SpreadsheetApp.getUi().alert(
+      'Cotización actualizada — ' + sale.clientName + ' (N° ' + sale.quoteNumber + ').' + msg
+    );
   } catch (e) {
-    msg = '\n\nError en presentación:\n' + e.message;
+    SpreadsheetApp.getUi().alert('Error en presentación:\n' + e.message);
   }
+}
 
+function addUpdateColumn() {
+  const sheet = getSalesSheet_();
+  if (!sheet) return;
+  setupUpdateColumn_(sheet);
+  const triggerMsg = ensureEditTrigger_()
+    ? '\n\nTrigger de actualización instalado.'
+    : '\n\nTrigger ya estaba activo.';
   SpreadsheetApp.getUi().alert(
-    'Cotización actualizada — ' + sale.clientName + ' (N° ' + sale.quoteNumber + ').' + msg
+    'Columna "Actualizar" lista.' + triggerMsg +
+      '\n\nMarca la casilla en móvil o PC para actualizar Slides.'
+  );
+}
+
+function activateCheckboxUpdate() {
+  const created = ensureEditTrigger_();
+  SpreadsheetApp.getUi().alert(
+    created
+      ? 'Listo. Al marcar la casilla "Actualizar" se actualizará Slides.'
+      : 'El trigger ya estaba activo. Marca la casilla "Actualizar" para actualizar Slides.'
   );
 }
 
@@ -145,6 +169,7 @@ function verifyQuotePresentation() {
 
 // ─── Ventas: leer fila y metadatos ───────────────────────────────────────────
 
+// Trigger simple: solo metadatos (N° cotización / fecha). No puede abrir Slides.
 function onEdit(e) {
   try {
     if (!e || !e.range) return;
@@ -153,6 +178,88 @@ function onEdit(e) {
     if (e.range.getRow() < 2 || e.range.getColumn() !== COL.CLIENT) return;
     ensureQuoteMetadata_(sheet, e.range.getRow());
   } catch (err) { /* no bloquear edición */ }
+}
+
+// Trigger instalable: actualiza Slides al marcar la casilla (móvil y PC).
+function onEditInstallable(e) {
+  try {
+    if (!e || !e.range) return;
+    const sheet = e.range.getSheet();
+    if (sheet.getName() !== CONFIG.SHEET_SALES) return;
+    if (e.range.getRow() < 2) return;
+
+    const updateCol = getUpdateColumn_(sheet);
+    if (e.range.getColumn() === updateCol && isCheckedValue_(e.value)) {
+      handleUpdateCheckboxEdit_(e, sheet, updateCol);
+    }
+  } catch (err) {
+    logQuoteDebug_('onEditInstallable: ' + err.message);
+  }
+}
+
+function ensureEditTrigger_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const exists = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === EDIT_TRIGGER_HANDLER
+      && t.getEventType() === ScriptApp.EventType.ON_EDIT;
+  });
+  if (exists) return false;
+
+  ScriptApp.newTrigger(EDIT_TRIGGER_HANDLER)
+    .forSpreadsheet(ss)
+    .onEdit()
+    .create();
+  return true;
+}
+
+function handleUpdateCheckboxEdit_(e, sheet, updateCol) {
+  updateCol = updateCol || getUpdateColumn_(sheet);
+  if (!isCheckedValue_(e.value)) return;
+
+  const row = e.range.getRow();
+  const updateCell = sheet.getRange(row, updateCol);
+  const lock = LockService.getScriptLock();
+
+  if (!lock.tryLock(30000)) {
+    updateCell.setValue(false);
+    showQuoteToast_('Otra actualización en curso. Intenta de nuevo.');
+    return;
+  }
+
+  try {
+    if (isBlank_(sheet.getRange(row, COL.CLIENT).getValue())) {
+      updateCell.setValue(false);
+      showQuoteToast_('La fila ' + row + ' no tiene cliente.');
+      return;
+    }
+
+    ensureQuoteMetadata_(sheet, row);
+    const result = updateQuoteForRow_(row, sheet);
+    updateCell.setValue(false);
+
+    var msg = 'Cotización actualizada — ' + result.sale.clientName + ' (N° ' + result.sale.quoteNumber + ')';
+    if (result.imageNote) msg += '. ' + result.imageNote;
+    showQuoteToast_(msg);
+    logQuoteDebug_('OK fila ' + row);
+  } catch (err) {
+    updateCell.setValue(false);
+    showQuoteToast_('Error: ' + err.message);
+    logQuoteDebug_('Error fila ' + row + ': ' + err.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateQuoteForRow_(row, sheet) {
+  sheet = sheet || getSalesSheet_();
+  if (!sheet) throw new Error('No existe la hoja Ventas.');
+  const sale = rowToSale_(sheet, row);
+  const result = updatePresentation_(sale);
+  return { sale: sale, url: result.url, imageNote: result.imageNote };
+}
+
+function showQuoteToast_(message) {
+  SpreadsheetApp.getActiveSpreadsheet().toast(String(message), 'KYS', 8);
 }
 
 function getSelectedSale_() {
@@ -257,6 +364,46 @@ function formatSalesSheet_(sheet) {
   sheet.setColumnWidth(COL.PRODUCT, 160);
   sheet.setColumnWidth(COL.FREQUENCY, 110);
   sheet.setColumnWidth(COL.IMAGE_URL, 220);
+  setupUpdateColumn_(sheet);
+}
+
+function setupUpdateColumn_(sheet) {
+  const header = sheet.getRange(1, COL.UPDATE);
+  header.setValue('Actualizar');
+  header.setBackground('#1a365d').setFontColor('#ffffff').setFontWeight('bold');
+
+  const rows = formulaLastRow_(sheet) - 1;
+  if (rows < 1) return;
+
+  const rule = SpreadsheetApp.newDataValidation()
+    .requireCheckbox()
+    .build();
+  sheet.getRange(2, COL.UPDATE, rows, 1).setDataValidation(rule);
+  sheet.setColumnWidth(COL.UPDATE, 90);
+}
+
+function getUpdateColumn_(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), COL.UPDATE);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i]).trim().toLowerCase() === 'actualizar') return i + 1;
+  }
+  return COL.UPDATE;
+}
+
+function isCheckedValue_(value) {
+  if (value === true) return true;
+  if (value === false || value === null || value === '') return false;
+  return String(value).trim().toUpperCase() === 'TRUE';
+}
+
+function logQuoteDebug_(message) {
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      'LAST_QUOTE_DEBUG',
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss') + ' — ' + message
+    );
+  } catch (e) { /* ok */ }
 }
 
 function freezeQuoteColumns_(sheet) {
