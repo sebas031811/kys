@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.env
+backend/kys.db
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+.DS_Store

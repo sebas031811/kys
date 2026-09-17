@@ -54,7 +54,7 @@ const COL = {
   INSTALLMENTS: 11,
   FREQUENCY: 12,
   INSTALLMENT: 13,
-  IMAGE_URL: 14,
+  OBSERVATIONS: 14,
   UPDATE: 15,
 };
 
@@ -67,7 +67,7 @@ const EDIT_TRIGGER_HANDLER = 'onEditInstallable';
 const SALES_HEADERS = [
   'N° Cotización', 'Fecha', 'Cliente', 'Identificación', 'Teléfono', 'Producto',
   'Valor Producto', 'Cuota Inicial', 'Saldo Financiado', 'Tasa Crédito (%)',
-  'N° Cuotas', 'Frecuencia', 'Valor Cuota', 'Link Imagen', 'Actualizar',
+  'N° Cuotas', 'Frecuencia', 'Valor Cuota', 'Observaciones', 'Actualizar',
 ];
 
 // ─── Menú ────────────────────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ function updateQuoteForRow_(row, sheet) {
   sheet = sheet || getSalesSheet_();
   if (!sheet) throw new Error('No existe la hoja Ventas.');
   const sale = rowToSale_(sheet, row);
-  const result = updatePresentation_(sale);
+  const result = updatePresentation_(sale, sheet);
   return { sale: sale, url: result.url, imageNote: result.imageNote };
 }
 
@@ -288,9 +288,12 @@ function getSelectedSale_() {
 }
 
 function rowToSale_(sheet, row) {
-  const range = sheet.getRange(row, 1, 1, COL.IMAGE_URL);
+  const obsCol = getObservationsColumn_(sheet);
+  const lastCol = Math.max(obsCol, COL.INSTALLMENT);
+  const range = sheet.getRange(row, 1, 1, lastCol);
   const v = range.getValues()[0];
   const d = range.getDisplayValues()[0];
+  const obsValue = sheet.getRange(row, obsCol).getValue();
 
   return {
     row: row,
@@ -307,7 +310,7 @@ function rowToSale_(sheet, row) {
     installments: num_(v[COL.INSTALLMENTS - 1]),
     frequency: resolveFrequency_(v[COL.FREQUENCY - 1]),
     installmentValue: num_(v[COL.INSTALLMENT - 1]),
-    productImageUrl: normalizeDriveUrl_(v[COL.IMAGE_URL - 1]),
+    productImageUrl: normalizeDriveUrl_(obsValue),
   };
 }
 
@@ -363,7 +366,7 @@ function formatSalesSheet_(sheet) {
   sheet.setColumnWidth(COL.CLIENT, 180);
   sheet.setColumnWidth(COL.PRODUCT, 160);
   sheet.setColumnWidth(COL.FREQUENCY, 110);
-  sheet.setColumnWidth(COL.IMAGE_URL, 220);
+  sheet.setColumnWidth(COL.OBSERVATIONS, 220);
   setupUpdateColumn_(sheet);
 }
 
@@ -389,6 +392,16 @@ function getUpdateColumn_(sheet) {
     if (String(headers[i]).trim().toLowerCase() === 'actualizar') return i + 1;
   }
   return COL.UPDATE;
+}
+
+function getObservationsColumn_(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), COL.OBSERVATIONS);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const aliases = ['observaciones', 'link imagen', 'imagen / link', 'imagen o link'];
+  for (var i = 0; i < headers.length; i++) {
+    if (aliases.indexOf(String(headers[i]).trim().toLowerCase()) !== -1) return i + 1;
+  }
+  return COL.OBSERVATIONS;
 }
 
 function isCheckedValue_(value) {
@@ -460,11 +473,13 @@ function formulaSep_() {
 
 // ─── Google Slides: texto ────────────────────────────────────────────────────
 
-function updatePresentation_(sale) {
+function updatePresentation_(sale, sheet) {
+  sheet = sheet || getSalesSheet_();
   const pres = openPresentation_();
   refreshImageSlot_(pres);
   applySlideText_(pres, buildReplacements_(sale));
-  const imageNote = insertProductImage_(pres, sale.productImageUrl);
+  const imageResult = resolveProductImage_(sheet, sale.row);
+  const imageNote = insertProductImage_(pres, imageResult);
   try { pres.saveAndClose(); } catch (e) { /* ok */ }
   return { url: pres.getUrl(), imageNote: imageNote };
 }
@@ -567,6 +582,165 @@ function savePlaceholderBindings_(bindings) {
 
 // ─── Google Slides: imagen ───────────────────────────────────────────────────
 
+function resolveProductImage_(sheet, row) {
+  const col = getObservationsColumn_(sheet);
+  const cell = sheet.getRange(row, col);
+  const hadCellImage = isCellImageValue_(cell.getValue());
+
+  var blob = getCellImageBlob_(cell);
+  if (blob) return { blob: blob, source: 'cell', attemptedLink: false, hadCellImage: true };
+
+  blob = getAnchoredCellImageBlob_(sheet, row, col);
+  if (blob) return { blob: blob, source: 'cell', attemptedLink: false, hadCellImage: true };
+
+  var embeddedUri = getEmbeddedCellImageUri_(sheet, row, col);
+  if (!isBlank_(embeddedUri)) {
+    blob = fetchImageBlob_(embeddedUri);
+    if (blob) return { blob: blob, source: 'cell', attemptedLink: false, hadCellImage: true };
+  }
+
+  var formulaUrl = extractImageFormulaUrl_(cell);
+  if (!isBlank_(formulaUrl)) {
+    blob = fetchImageBlob_(formulaUrl);
+    if (blob) return { blob: blob, source: 'link', attemptedLink: true, hadCellImage: hadCellImage };
+  }
+
+  if (!hadCellImage) {
+    var url = normalizeDriveUrl_(cell.getValue());
+    if (!isBlank_(url)) {
+      blob = fetchImageBlob_(url);
+      if (blob) return { blob: blob, source: 'link', attemptedLink: true, hadCellImage: false };
+    }
+  }
+
+  return {
+    blob: null,
+    source: hadCellImage ? 'cell' : 'none',
+    attemptedLink: !isBlank_(formulaUrl),
+    hadCellImage: hadCellImage,
+  };
+}
+
+function isCellImageValue_(value) {
+  if (!value || typeof value !== 'object') return false;
+  try {
+    if (value.valueType === SpreadsheetApp.ValueType.IMAGE) return true;
+  } catch (e) { /* ok */ }
+  return typeof value.getContentUrl === 'function';
+}
+
+function getCellImageBlob_(cell) {
+  const value = cell.getValue();
+  if (!isCellImageValue_(value)) return null;
+
+  try {
+    const contentUrl = String(value.getContentUrl() || '').trim();
+    if (!isBlank_(contentUrl)) {
+      var blob = fetchAuthenticatedImageBlob_(contentUrl);
+      if (blob) return blob;
+      blob = fetchImageBlob_(contentUrl);
+      if (blob) return blob;
+    }
+  } catch (e) {
+    logQuoteDebug_('CellImage Observaciones: ' + e.message);
+  }
+
+  return null;
+}
+
+function fetchAuthenticatedImageBlob_(url) {
+  if (isBlank_(url)) return null;
+
+  try {
+    // SECURITY-REVIEW: URL firmada de Google Sheets/Drive; requiere token del script.
+    const res = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+      followRedirects: true,
+    });
+    if (res.getResponseCode() !== 200) return null;
+
+    const blob = res.getBlob();
+    const type = blob.getContentType() || '';
+    if (type.indexOf('image') === 0 || type === 'application/octet-stream') return blob;
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function getAnchoredCellImageBlob_(sheet, row, col) {
+  const images = sheet.getImages();
+  for (var i = 0; i < images.length; i++) {
+    try {
+      const anchor = images[i].getAnchorCell();
+      if (anchor && anchor.getRow() === row && anchor.getColumn() === col) {
+        return images[i].getBlob();
+      }
+    } catch (e) { /* siguiente imagen */ }
+  }
+  return null;
+}
+
+function getEmbeddedCellImageUri_(sheet, row, col) {
+  const ssId = sheet.getParent().getId();
+  const range = encodeURIComponent("'" + sheet.getName().replace(/'/g, "''") + "'!" + cellA1_(row, col));
+  const apiUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' + ssId
+    + '?ranges=' + range
+    + '&fields=sheets.data.rowData.values.userEnteredValue';
+
+  try {
+    // SECURITY-REVIEW: lectura de celda propia del spreadsheet vinculado al script.
+    const res = UrlFetchApp.fetch(apiUrl, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+    if (res.getResponseCode() !== 200) return '';
+
+    const payload = JSON.parse(res.getContentText());
+    const values = payload.sheets
+      && payload.sheets[0]
+      && payload.sheets[0].data
+      && payload.sheets[0].data[0]
+      && payload.sheets[0].data[0].rowData
+      && payload.sheets[0].data[0].rowData[0]
+      && payload.sheets[0].data[0].rowData[0].values;
+    if (!values || !values[0]) return '';
+
+    const image = values[0].userEnteredValue && values[0].userEnteredValue.image;
+    if (!image) return '';
+
+    return String(image.sourceUri || image.contentUri || '').trim();
+  } catch (e) {
+    return '';
+  }
+}
+
+function extractImageFormulaUrl_(cell) {
+  const formula = String(cell.getFormula() || '').trim();
+  if (!formula) return '';
+
+  const quoted = formula.match(/^=IMAGE\s*\(\s*"([^"]+)"/i)
+    || formula.match(/^=IMAGE\s*\(\s*'([^']+)'/i);
+  if (quoted) return quoted[1];
+
+  const unquoted = formula.match(/^=IMAGE\s*\(\s*([^,)]+)/i);
+  if (!unquoted) return '';
+
+  return String(unquoted[1] || '').trim().replace(/^["']|["']$/g, '');
+}
+
+function cellA1_(row, col) {
+  var letters = '';
+  var n = col;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    letters = String.fromCharCode(65 + rem) + letters;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letters + row;
+}
+
 function refreshImageSlot_(pres) {
   const target = getTargetSlide_(pres);
 
@@ -585,7 +759,9 @@ function refreshImageSlot_(pres) {
   shape.getBorder().getLineFill().setSolidFill('#cbd5e0');
 }
 
-function insertProductImage_(pres, imageUrl) {
+function insertProductImage_(pres, imageResult) {
+  imageResult = imageResult || { blob: null, source: 'none', attemptedLink: false, hadCellImage: false };
+
   const slot = findShapeWithText_(pres, IMAGE_MARKER);
   if (!slot) return 'Sin marcador ' + IMAGE_MARKER + ' en la presentación.';
 
@@ -594,7 +770,7 @@ function insertProductImage_(pres, imageUrl) {
   slot.element.remove();
 
   var usedDefault = false;
-  var blob = fetchImageBlob_(imageUrl);
+  var blob = imageResult.blob;
   if (!blob && !isBlank_(CONFIG.DEFAULT_PRODUCT_IMAGE_URL)) {
     blob = fetchImageBlob_(CONFIG.DEFAULT_PRODUCT_IMAGE_URL);
     usedDefault = !!blob;
@@ -602,8 +778,8 @@ function insertProductImage_(pres, imageUrl) {
 
   if (!blob) {
     refreshImageSlot_(pres);
-    if (isBlank_(CONFIG.DEFAULT_PRODUCT_IMAGE_URL) && isBlank_(imageUrl)) {
-      return 'Sin imagen (columna N vacía y sin DEFAULT_PRODUCT_IMAGE_URL).';
+    if (isBlank_(CONFIG.DEFAULT_PRODUCT_IMAGE_URL) && imageResult.source === 'none') {
+      return 'Sin imagen (Observaciones vacía y sin DEFAULT_PRODUCT_IMAGE_URL).';
     }
     throw new Error('No se pudo cargar la imagen del producto ni la imagen por defecto.');
   }
@@ -612,10 +788,18 @@ function insertProductImage_(pres, imageUrl) {
   img.setLeft(box.left).setTop(box.top).setWidth(box.width).setHeight(box.height);
   img.setDescription(IMAGE_TAG);
 
-  if (usedDefault && !isBlank_(imageUrl)) {
-    return 'Se usó la imagen por defecto (el link del producto no funcionó).';
+  if (usedDefault && imageResult.hadCellImage) {
+    return 'Se usó la imagen por defecto (no se pudo descargar la imagen en Observaciones).';
+  }
+  if (usedDefault && imageResult.attemptedLink) {
+    return 'Se usó la imagen por defecto (la imagen/link del producto no funcionó).';
+  }
+  if (usedDefault && imageResult.source === 'cell') {
+    return 'Se usó la imagen por defecto (no se pudo leer la imagen de la celda).';
   }
   if (usedDefault) return 'Se usó la imagen por defecto.';
+  if (imageResult.source === 'cell') return 'Imagen de Observaciones insertada.';
+  if (imageResult.source === 'link') return 'Imagen del link insertada.';
   return 'Imagen actualizada.';
 }
 
@@ -682,15 +866,31 @@ function fetchImageBlob_(url) {
     try { return DriveApp.getFileById(driveId[1]).getBlob(); } catch (e) { /* http fallback */ }
   }
 
+  if (isGoogleHostedUrl_(normalized)) {
+    var authed = fetchAuthenticatedImageBlob_(normalized);
+    if (authed) return authed;
+  }
+
   try {
     // SECURITY-REVIEW: URL del usuario o CONFIG; solo para descargar imagen.
-    const res = UrlFetchApp.fetch(normalized, { muteHttpExceptions: true, followRedirects: true });
+    var res = UrlFetchApp.fetch(normalized, { muteHttpExceptions: true, followRedirects: true });
+    if (res.getResponseCode() !== 200 && isGoogleHostedUrl_(normalized)) {
+      res = UrlFetchApp.fetch(normalized, {
+        headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true,
+        followRedirects: true,
+      });
+    }
     if (res.getResponseCode() !== 200) return null;
     const blob = res.getBlob();
     return (blob.getContentType() || '').indexOf('image') === 0 ? blob : null;
   } catch (e) {
     return null;
   }
+}
+
+function isGoogleHostedUrl_(url) {
+  return /(?:googleusercontent\.com|google\.com|gstatic\.com|ggpht\.com)/i.test(String(url || ''));
 }
 
 // ─── Google Slides: acceso ───────────────────────────────────────────────────
