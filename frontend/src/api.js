@@ -1,21 +1,37 @@
-const API = import.meta.env.VITE_API_URL || "";
-
 export async function api(path, options = {}) {
-  const res = await fetch(`${API}${path}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    ...options,
-  });
-  if (res.status === 401 && !path.includes("/auth/login")) {
-    window.location.hash = "#/login";
-    throw new Error("Unauthorized");
+  if (typeof google === "undefined" || !google.script?.run) {
+    throw new Error("Open KYS from the Google Apps Script web app URL (not localhost).");
   }
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : Array.isArray(detail) ? detail[0]?.msg : res.statusText;
-    throw new Error(msg || res.statusText);
+
+  const token = sessionStorage.getItem("kys_token") || "";
+  const method = (options.method || "GET").toUpperCase();
+  let body = null;
+  if (options.body) {
+    body = typeof options.body === "string" ? JSON.parse(options.body) : options.body;
+  }
+
+  const payload = await new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler((err) => reject(new Error(err.message || String(err))))
+      .apiDispatch({ method, path, body, token });
+  });
+
+  if (payload?.error) {
+    if (payload.status === 401 && !path.includes("/auth/login")) {
+      sessionStorage.removeItem("kys_token");
+      window.location.hash = "#/login";
+    }
+    throw new Error(payload.error);
+  }
+
+  const data = payload.data;
+  if (data?.token) {
+    sessionStorage.setItem("kys_token", data.token);
   }
   return data;
+}
+
+export function clearSession() {
+  sessionStorage.removeItem("kys_token");
 }

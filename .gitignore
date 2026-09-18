@@ -1,8 +1,4 @@
-__pycache__/
-*.py[cod]
-.env
-backend/kys.db
-backend/.venv/
 frontend/node_modules/
 frontend/dist/
+google/kys-app/Index.html
 .DS_Store

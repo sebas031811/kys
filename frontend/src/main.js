@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+import { api, clearSession } from "./api.js";
 
 let state = { user: null, route: "", params: "" };
 
@@ -269,8 +269,7 @@ async function viewSaleDetail(root, id) {
     }
   };
   root.querySelector("#printBtn").onclick = async () => {
-    const base = import.meta.env.VITE_API_URL || "";
-    const html = await fetch(`${base}/api/quotes/${id}/print`, { credentials: "include" }).then((r) => r.text());
+    const { html } = await api(`/api/quotes/${id}/print`);
     const win = window.open("", "_blank");
     win.document.write(html);
     win.document.close();
@@ -491,6 +490,7 @@ async function render() {
     logout.onclick = async (e) => {
       e.preventDefault();
       await api("/api/auth/logout", { method: "POST" });
+      clearSession();
       state.user = null;
       location.hash = "#/login";
       render();
