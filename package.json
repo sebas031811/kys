@@ -1,0 +1,14 @@
+{
+  "name": "kys",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix frontend",
+    "gas:login": "node scripts/run-clasp.mjs login",
+    "gas:logout": "node scripts/run-clasp.mjs logout",
+    "gas:push": "node scripts/gas-push.mjs",
+    "gas:deploy": "node scripts/gas-push.mjs && node scripts/gas-deploy.mjs"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1"
+  }
+}

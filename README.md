@@ -1,34 +1,29 @@
 # KYS — ventas y cuotas
 
-Web app for KYS: clients, sales (cost + margin %), installment schedules, accounts, and seller dashboard.
+Full **Google** app: **Spreadsheet = database**, **Apps Script = API**, **web app = forms** (ventas, cuotas, clientes, pagos).
 
-**Stack:** Google Sheets (data) + Apps Script (API) + Vite SPA (UI in the web app).
+**Setup guide:** [google/SETUP.md](google/SETUP.md)
 
-Deploy and setup: **[google/README.md](google/README.md)**
+## Update Google (automatic)
 
-## Build UI for Apps Script
+One-time: [google/SETUP.md](google/SETUP.md) → clasp login + `.clasp.json`.
 
 ```powershell
-cd frontend
 npm install
-npm run build
+npm run gas:push
 ```
 
-Copy `google/kys-app/Index.html` into your Apps Script project after each build.
+Builds the UI and uploads all Apps Script files. Optional: `npm run gas:deploy` with `KYS_CLASP_DEPLOYMENT_ID` set to refresh the web app version.
 
-## Business rules
+## Pricing
 
-| Estado | Meaning |
-|--------|---------|
-| **Cotización** | **Solo cotización** on the form; convert on detail. |
-| **Venta** | Full schedule; **Registrar pago** applies to cuotas 0 → 1 → 2… |
+`Ganancia = (costo − inicial) × %` · `Total = costo + ganancia` · `Cuota = (total − inicial) ÷ # cuotas`
 
-**Pricing:** `Ganancia = (costo − inicial) × %` · `Total = costo + ganancia` · `Cuota = (total − inicial) ÷ # cuotas`.
-
-## Layout
+## Repo layout
 
 ```
-frontend/       UI source (build → embed into Apps Script)
-google/kys-app/ Apps Script project files (.gs + Index.html)
-scripts/        embed-gas.mjs (called by npm run build)
+frontend/       Form UI (Vite → embedded in Index.html)
+google/kys-app/ Apps Script + sheet logic (.gs files)
+google/SETUP.md Step-by-step Google deploy
+scripts/        embed-gas.mjs
 ```

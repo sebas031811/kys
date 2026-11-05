@@ -30,6 +30,15 @@ a {
   padding: 1rem;
 }
 
+.app-header {
+  margin-bottom: 0.5rem;
+}
+
+.app-header .muted {
+  font-size: 0.9rem;
+  font-weight: normal;
+}
+
 nav {
   display: flex;
   flex-wrap: wrap;

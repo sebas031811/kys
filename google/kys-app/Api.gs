@@ -46,11 +46,21 @@ function routeApi_(method, path, body, token) {
     return parseClientRequest_(body);
   }
 
+  if (method === 'GET' && path === '/api/accounts/summary') {
+    requireUser_(token);
+    return listAccountsSummary_(token);
+  }
   if (method === 'GET' && path === '/api/accounts') {
     requireUser_(token);
     return listAccounts_();
   }
   if (method === 'POST' && path === '/api/accounts') return createAccount_(body, token);
+
+  var accountMatch = path.match(/^\/api\/accounts\/(\d+)$/);
+  if (accountMatch && method === 'PATCH') {
+    requireUser_(token);
+    return updateAccount_(accountMatch[1], body, token);
+  }
 
   if (method === 'POST' && path === '/api/pricing/preview') {
     requireUser_(token);
@@ -62,6 +72,10 @@ function routeApi_(method, path, body, token) {
   if (method === 'GET' && (path === '/api/sales' || path.indexOf('/api/sales?') === 0)) {
     var q = parseQuery_(path);
     return listSales_(token, q.record_status || null);
+  }
+  if (method === 'POST' && path === '/api/sales') {
+    requireUser_(token);
+    return createSale_(token, body);
   }
 
   var saleMatch = path.match(/^\/api\/sales\/(\d+)(\/confirm|\/payments)?$/);

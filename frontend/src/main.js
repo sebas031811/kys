@@ -33,6 +33,14 @@ function escAttr(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
+function escHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function periodOptions(current) {
   const p = current || "Mensual";
   return ["Mensual", "Quincenal", "Contado"]
@@ -127,7 +135,7 @@ function nav() {
        <a href="#/accounts">Cuentas</a>
        <a href="#" id="logout">Salir (${state.user.display_name})</a>`
     : `<a href="#/login">Entrar</a>`;
-  return `<nav>${links}</nav>`;
+  return `<header class="app-header"><strong>KYS</strong> <span class="muted">ventas · cuotas · clientes</span></header><nav>${links}</nav>`;
 }
 
 async function loadUser() {
@@ -427,10 +435,17 @@ async function viewClients(root) {
     <button id="parseBtn" class="secondary">Parsear</button>
     <label>Nombre<input id="cName"/></label>
     <label>Teléfono<input id="cPhone"/></label>
+    <label>Email<input id="cEmail" type="email"/></label>
+    <label>Dirección<input id="cAddress"/></label>
     <label>Cédula<input id="cId"/></label>
     <button id="addClient">Agregar</button>
-    <table style="margin-top:1rem"><thead><tr><th>Nombre</th><th>Tel</th></tr></thead>
-    <tbody>${clients.map((c) => `<tr><td>${c.name}</td><td>${c.phone || ""}</td></tr>`).join("")}</tbody></table></div>`)
+    <table style="margin-top:1rem"><thead><tr><th>Nombre</th><th>Tel</th><th>Email</th><th>Dirección</th></tr></thead>
+    <tbody>${clients
+      .map(
+        (c) =>
+          `<tr><td>${escHtml(c.name)}</td><td>${escHtml(c.phone || "")}</td><td>${escHtml(c.email || "")}</td><td>${escHtml(c.address || "")}</td></tr>`
+      )
+      .join("")}</tbody></table></div>`)
   );
   root.querySelector("#parseBtn").onclick = async () => {
     const parsed = await api("/api/clients/parse", {
@@ -439,6 +454,8 @@ async function viewClients(root) {
     });
     root.querySelector("#cName").value = parsed.name || "";
     root.querySelector("#cPhone").value = parsed.phone || "";
+    root.querySelector("#cEmail").value = parsed.email || "";
+    root.querySelector("#cAddress").value = parsed.address || "";
     root.querySelector("#cId").value = parsed.identification || "";
   };
   root.querySelector("#addClient").onclick = async () => {
@@ -447,6 +464,8 @@ async function viewClients(root) {
       body: JSON.stringify({
         name: root.querySelector("#cName").value,
         phone: root.querySelector("#cPhone").value,
+        email: root.querySelector("#cEmail").value || null,
+        address: root.querySelector("#cAddress").value || null,
         identification: root.querySelector("#cId").value,
         raw_client_text: root.querySelector("#raw").value,
       }),
@@ -455,18 +474,67 @@ async function viewClients(root) {
   };
 }
 
+function accountTypeLabel(t) {
+  if (t === "purchase") return "Compra";
+  if (t === "collection") return "Cobro";
+  return "Ambas";
+}
+
 async function viewAccounts(root) {
-  const accounts = await api("/api/accounts");
-  const adminForm =
-    state.user.role === "admin"
-      ? `<label>Nombre<input id="accName"/></label>
+  const summary = await api("/api/accounts/summary");
+  const { accounts, movements } = summary;
+  const isAdmin = state.user.role === "admin";
+
+  const adminForm = isAdmin
+    ? `<div class="grid2">
+    <label>Nombre<input id="accName"/></label>
     <label>Tipo<select id="accType"><option value="both">Ambas</option><option value="purchase">Compra</option><option value="collection">Cobro</option></select></label>
-    <button id="addAcc">Agregar</button>`
-      : `<p class="muted">Solo admin puede crear cuentas.</p>`;
+    <label>Saldo inicial<input id="accOpening" type="number" value="0"/></label>
+    </div>
+    <button id="addAcc">Agregar cuenta</button>`
+    : `<p class="muted">Solo admin puede crear cuentas.</p>`;
+
+  const balanceRows = accounts
+    .map(
+      (a) =>
+        `<tr data-id="${a.id}">
+      <td>${escHtml(a.name)}</td>
+      <td>${accountTypeLabel(a.account_type)}</td>
+      <td>${money(a.total_purchased)}</td>
+      <td>${money(a.total_received)}</td>
+      <td>${
+        isAdmin
+          ? `<input type="number" class="opening-input" value="${a.opening_balance}" style="max-width:120px"/>`
+          : money(a.opening_balance)
+      }</td>
+      <td><strong>${money(a.balance)}</strong></td>
+      ${isAdmin ? `<td><button type="button" class="secondary save-opening">Guardar saldo</button></td>` : ""}
+    </tr>`
+    )
+    .join("");
+
+  const movementRows = movements
+    .map((m) => {
+      const acc = accounts.find((a) => a.id === m.account_id);
+      const kind = m.kind === "purchase" ? "Compra" : "Cobro";
+      const sign = m.kind === "purchase" ? "−" : "+";
+      return `<tr><td>${m.date || "—"}</td><td>${escHtml(acc?.name || m.account_id)}</td><td>${kind}</td><td>${sign} ${money(m.amount)}</td><td>${escHtml(m.reference)}</td><td class="muted">${escHtml(m.description)}</td></tr>`;
+    })
+    .join("");
+
   root.appendChild(
-    el(`<div class="card"><h1>Cuentas</h1>${adminForm}
-    <ul>${accounts.map((a) => `<li>${a.name} <span class="muted">(${a.account_type})</span></li>`).join("")}</ul></div>`)
+    el(`<div>
+    <div class="card"><h1>Cuentas</h1>
+    <p class="muted">Comprado = costo de ventas con esa cuenta de compra. Recibido = pagos con esa cuenta de cobro. Balance = saldo inicial + recibido − comprado.</p>
+    ${adminForm}
+    <table style="margin-top:1.25rem"><thead><tr>
+      <th>Cuenta</th><th>Tipo</th><th>Comprado</th><th>Recibido</th><th>Saldo inicial</th><th>Balance</th>${isAdmin ? "<th></th>" : ""}
+    </tr></thead><tbody>${balanceRows || "<tr><td colspan=7 class=muted>Sin cuentas</td></tr>"}</tbody></table></div>
+    <div class="card"><h2>Movimientos</h2>
+    <table><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Monto</th><th>Ref</th><th>Detalle</th></tr></thead>
+    <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (asigna cuenta en ventas y pagos)</td></tr>"}</tbody></table></div></div>`)
   );
+
   const addBtn = root.querySelector("#addAcc");
   if (addBtn) {
     addBtn.onclick = async () => {
@@ -475,16 +543,45 @@ async function viewAccounts(root) {
         body: JSON.stringify({
           name: root.querySelector("#accName").value,
           account_type: root.querySelector("#accType").value,
+          opening_balance: Number(root.querySelector("#accOpening").value || 0),
         }),
       });
       render();
     };
   }
+
+  root.querySelectorAll(".save-opening").forEach((btn) => {
+    btn.onclick = async () => {
+      const tr = btn.closest("tr");
+      const id = tr.dataset.id;
+      const opening = Number(tr.querySelector(".opening-input").value || 0);
+      try {
+        await api(`/api/accounts/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ opening_balance: opening }),
+        });
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+}
+
+function wireNavLinks(app) {
+  app.querySelectorAll("nav a[href^='#']").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      const href = a.getAttribute("href");
+      if (href) location.hash = href;
+    });
+  });
 }
 
 async function render() {
   const app = document.getElementById("app");
   app.innerHTML = nav();
+  wireNavLinks(app);
   const logout = document.getElementById("logout");
   if (logout) {
     logout.onclick = async (e) => {

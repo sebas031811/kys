@@ -20,7 +20,11 @@ function getSpreadsheet_() {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty(KYS_CONFIG.SPREADSHEET_ID_PROPERTY);
   if (id) return SpreadsheetApp.openById(id);
-  return SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active;
+  } catch (e) { /* web app or trigger context */ }
+  throw new Error('No hay hoja vinculada. Abre el Google Sheet y ejecuta KYS → Inicializar (primera vez).');
 }
 
 function setSpreadsheetId_(id) {
