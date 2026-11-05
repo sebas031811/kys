@@ -1,33 +1,47 @@
-function normalizeMargin_(marginRate) {
-  var r = num_(marginRate);
+function normalizePorcentaje_(rate) {
+  var r = num_(rate);
   return r > 1 ? r / 100 : r;
 }
 
+function pricingInputFromBody_(payload) {
+  payload = payload || {};
+  return {
+    valor: payload.valor != null ? payload.valor : payload.cost_price,
+    inicial: payload.inicial != null ? payload.inicial : payload.down_payment,
+    porcentaje: payload.porcentaje != null ? payload.porcentaje : payload.margin_rate,
+    num_cuotas: payload.num_cuotas != null ? payload.num_cuotas : payload.installment_count,
+    periodo_pago: payload.periodo_pago || payload.payment_period || 'Mensual',
+    total: payload.total,
+    cuota: payload.cuota,
+  };
+}
+
 function computeSalePricing_(payload) {
-  var cost = num_(payload.cost_price);
-  var rate = normalizeMargin_(payload.margin_rate);
-  var down = Math.max(num_(payload.down_payment), 0);
-  var count = Math.max(Number(payload.installment_count) || 1, 1);
-  var period = payload.payment_period || 'Mensual';
+  var input = pricingInputFromBody_(payload);
+  var valor = num_(input.valor);
+  var rate = normalizePorcentaje_(input.porcentaje);
+  var inicial = Math.max(num_(input.inicial), 0);
+  var count = Math.max(Number(input.num_cuotas) || 1, 1);
+  var periodo = input.periodo_pago || 'Mensual';
 
-  var profitBase = Math.max(cost - down, 0);
-  var profit = Math.round(profitBase * rate);
-  var total = payload.total_charge != null ? num_(payload.total_charge) : Math.round(cost + profit);
-  var financed = Math.max(total - down, 0);
-  var installmentAmount;
+  var profitBase = Math.max(valor - inicial, 0);
+  var ganancia = Math.round(profitBase * rate);
+  var total = input.total != null ? num_(input.total) : Math.round(valor + ganancia);
+  var financiado = Math.max(total - inicial, 0);
+  var cuota;
 
-  if (period === 'Contado' || count <= 1) {
-    installmentAmount = payload.installment_amount != null ? num_(payload.installment_amount) : total;
-  } else if (payload.installment_amount != null) {
-    installmentAmount = num_(payload.installment_amount);
+  if (periodo === 'Contado' || count <= 1) {
+    cuota = input.cuota != null ? num_(input.cuota) : total;
+  } else if (input.cuota != null) {
+    cuota = num_(input.cuota);
   } else {
-    installmentAmount = count ? Math.round(financed / count) : financed;
+    cuota = count ? Math.round(financiado / count) : financiado;
   }
 
   return {
-    profit: profit,
-    total_charge: total,
-    installment_amount: installmentAmount,
-    financed_amount: financed,
+    ganancia: ganancia,
+    total: total,
+    cuota: cuota,
+    saldo_financiado: financiado,
   };
 }

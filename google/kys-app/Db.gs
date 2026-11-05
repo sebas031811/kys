@@ -1,7 +1,7 @@
 function getSheet_(name) {
   var ss = getSpreadsheet_();
   var sh = ss.getSheetByName(name);
-  if (!sh) throw new Error('Missing sheet: ' + name + '. Run kysSetupSheets from the script editor.');
+  if (!sh) throw new Error('Falta la hoja: ' + name + '. Ejecuta KYS → Inicializar (primera vez).');
   return sh;
 }
 
@@ -32,8 +32,7 @@ function normalizeCell_(v) {
 function writeObjects_(sh, objects) {
   var name = sh.getName();
   var headers = KYS_HEADERS[name];
-  if (!headers) throw new Error('Unknown sheet headers for ' + name);
-  sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (!headers) throw new Error('Encabezados desconocidos para ' + name);
   sh.clearContents();
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (!objects.length) return;
@@ -109,4 +108,13 @@ function withDocLock_(fn) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function countPaidInstallments_(installments) {
+  var n = 0;
+  installments.forEach(function (inst) {
+    var st = mapEstadoCuotaFromSheet_(inst.estado || inst.status);
+    if (st === 'pagada') n += 1;
+  });
+  return n;
 }

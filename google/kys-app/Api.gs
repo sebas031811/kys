@@ -11,9 +11,9 @@ function apiDispatch(req) {
   } catch (e) {
     var msg = e.message || String(e);
     var status = 400;
-    if (msg === 'Unauthorized' || msg === 'Not authenticated') status = 401;
-    if (msg === 'Forbidden' || msg === 'Admin only') status = 403;
-    if (msg.indexOf('not found') !== -1) status = 404;
+    if (msg === 'No autenticado' || msg === 'Unauthorized' || msg === 'Not authenticated') status = 401;
+    if (msg === 'Acceso denegado' || msg === 'Forbidden' || msg === 'Solo administrador' || msg === 'Admin only') status = 403;
+    if (msg.indexOf('no encontrada') !== -1 || msg.indexOf('not found') !== -1) status = 404;
     return { error: msg, status: status };
   }
 }
@@ -24,7 +24,7 @@ function routeApi_(method, path, body, token) {
   }
   if (method === 'POST' && path === '/api/auth/logout') {
     destroySession_(token);
-    return { message: 'logged out' };
+    return { message: 'Sesión cerrada' };
   }
   if (method === 'GET' && path === '/api/auth/me') {
     return authMe_(token);
@@ -71,7 +71,8 @@ function routeApi_(method, path, body, token) {
 
   if (method === 'GET' && (path === '/api/sales' || path.indexOf('/api/sales?') === 0)) {
     var q = parseQuery_(path);
-    return listSales_(token, q.record_status || null);
+    var estado = q.estado_registro || q.record_status || null;
+    return listSales_(token, estado);
   }
   if (method === 'POST' && path === '/api/sales') {
     requireUser_(token);
@@ -93,7 +94,7 @@ function routeApi_(method, path, body, token) {
     return { html: quotePrintHtml_(token, quoteMatch[1]) };
   }
 
-  throw new Error('Unknown route: ' + method + ' ' + path);
+  throw new Error('Ruta desconocida: ' + method + ' ' + path);
 }
 
 function parseQuery_(path) {

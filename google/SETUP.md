@@ -41,6 +41,8 @@ This writes **`google/kys-app/Index.html`** (full UI). Copy that file into the A
 3. Authorize the script when asked.
 
 You should see tabs: **Usuarios**, **Clientes**, **Cuentas**, **Ventas**, **Cuotas**, **Pagos**.  
+Row 1 uses **Spanish column names** aligned with **Ventas-a-Credito.xlsx** (e.g. on **Ventas**: `valor`, `inicial`, `porcentaje`, `producto`, `fecha_venta`, `compra`, `tarjeta`, `ganancia_vivi`, …).
+
 Default login: **admin@kyscred.com** / **admin123** (change later in **Usuarios**).
 
 ## Step 4 — Publish the web app (forms URL)
@@ -125,6 +127,14 @@ npm run gas:push
 ```
 
 This runs `npm run build`, embeds **Index.html**, and **`clasp push`** uploads all `.gs` + **Index.html** to Google.
+
+### Upgrading an existing sheet (English headers → Spanish)
+
+1. **Back up** the spreadsheet (File → Make a copy).
+2. On your PC: `npm run gas:push` (new Apps Script code).
+3. In the spreadsheet: **KYS → Migrar encabezados (inglés → español)** once.
+4. Optional: **KYS → Reparar hojas / datos** to add any new columns without deleting rows.
+5. **Deploy → Manage deployments → Edit → New version** (or `npm run gas:deploy`).
 
 ### Optional: publish new web app version in one step
 

@@ -15,9 +15,11 @@ npm run gas:push
 
 Builds the UI and uploads all Apps Script files. Optional: `npm run gas:deploy` with `KYS_CLASP_DEPLOYMENT_ID` set to refresh the web app version.
 
-## Pricing
+## Pricing (como Ventas-a-Credito.xlsx — Base de datos)
 
-`Ganancia = (costo − inicial) × %` · `Total = costo + ganancia` · `Cuota = (total − inicial) ÷ # cuotas`
+`Ganancia = (valor − inicial) × %` · `Total = valor + ganancia` · `Cuota = (total − inicial) ÷ # cuotas`
+
+Las columnas del Sheet y la app usan nombres en español (`valor`, `inicial`, `porcentaje`, `fecha_venta`, …). Si tu hoja tiene encabezados en inglés de una versión anterior, en el Sheet: **KYS → Migrar encabezados (inglés → español)** después de `gas:push`.
 
 ## Repo layout
 

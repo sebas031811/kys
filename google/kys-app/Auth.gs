@@ -28,21 +28,21 @@ function authLogin_(email, password) {
       break;
     }
   }
-  if (!user || String(user.is_active) === 'false') throw new Error('Invalid credentials');
-  if (user.password_hash !== hashPassword_(password)) throw new Error('Invalid credentials');
+  if (!user || String(user.activo) === 'false') throw new Error('Credenciales inválidas');
+  if (user.password_hash !== hashPassword_(password)) throw new Error('Credenciales inválidas');
   return { token: createSession_(user.email), user: userOut_(user) };
 }
 
 function authMe_(token) {
   var email = sessionEmail_(token);
-  if (!email) throw new Error('Unauthorized');
+  if (!email) throw new Error('No autenticado');
   var rows = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.USERS));
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].email).toLowerCase() === String(email).toLowerCase()) {
       return userOut_(rows[i]);
     }
   }
-  throw new Error('Unauthorized');
+  throw new Error('No autenticado');
 }
 
 function requireUser_(token) {
@@ -50,29 +50,33 @@ function requireUser_(token) {
 }
 
 function userOut_(row) {
+  var nombre = row.nombre_visible || row.display_name;
+  var rol = row.rol || row.role;
+  var activo = row.activo != null ? row.activo : row.is_active;
   return {
     id: Number(row.id),
     email: row.email,
-    display_name: row.display_name,
-    role: row.role,
-    is_active: String(row.is_active) !== 'false',
+    nombre_visible: nombre,
+    rol: rol,
+    activo: String(activo) !== 'false',
   };
 }
 
 function listUsers_(token) {
   var me = requireUser_(token);
-  if (me.role !== 'admin') throw new Error('Admin only');
+  if (me.rol !== 'admin') throw new Error('Solo administrador');
   return sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.USERS)).map(userOut_);
 }
 
 function seedAdminIfEmpty_() {
   var sh = getSheet_(KYS_CONFIG.SHEETS.USERS);
   if (sheetToObjects_(sh).length > 0) return;
+  var u = KYS_FIELDS.USUARIO;
   appendObject_(sh, {
     email: 'admin@kyscred.com',
     password_hash: hashPassword_('admin123'),
-    display_name: 'Admin',
-    role: 'admin',
-    is_active: true,
+    nombre_visible: 'Admin',
+    rol: 'admin',
+    activo: true,
   });
 }

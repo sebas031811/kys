@@ -6,9 +6,7 @@ function kysSetupSheets() {
   Object.keys(KYS_HEADERS).forEach(function (sheetName) {
     var sh = ss.getSheetByName(sheetName);
     if (!sh) sh = ss.insertSheet(sheetName);
-    var headers = KYS_HEADERS[sheetName];
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sh.setFrozenRows(1);
+    ensureMissingColumnsOnSetup_(sh, sheetName);
   });
   seedAdminIfEmpty_();
   SpreadsheetApp.getUi().alert(
@@ -99,5 +97,6 @@ function onOpen() {
     .addItem('Guardar URL de la app', 'kysSetWebAppUrl')
     .addSeparator()
     .addItem('Reparar hojas / datos', 'kysSetupSheets')
+    .addItem('Migrar encabezados (inglés → español)', 'kysMigrarEncabezados')
     .addToUi();
 }

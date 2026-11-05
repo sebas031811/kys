@@ -1,4 +1,5 @@
 import { api, clearSession } from "./api.js";
+import { periodOptions } from "./labels.js";
 
 let state = { user: null, route: "", params: "" };
 
@@ -7,25 +8,25 @@ function money(n) {
 }
 
 function statusLabel(s) {
-  return s.record_status === "cotizacion" ? "Cotización" : "Venta";
+  return s.estado_registro === "cotizacion" ? "Cotización" : "Venta";
 }
 
 function instStatusLabel(status) {
-  if (status === "paid") return "Pagada";
-  if (status === "partial") return "Parcial";
+  if (status === "pagada") return "Pagada";
+  if (status === "parcial") return "Parcial";
   return "Pendiente";
 }
 
 function nextPaymentAmount(sale) {
-  const rows = [...(sale.installments || [])].sort((a, b) => a.sequence - b.sequence);
-  const next = rows.find((i) => i.status !== "paid");
-  if (!next) return sale.installment_amount || 0;
-  return Math.max(0, (next.amount || 0) - (next.amount_paid || 0));
+  const rows = [...(sale.cuotas || [])].sort((a, b) => a.numero_cuota - b.numero_cuota);
+  const next = rows.find((i) => i.estado !== "pagada");
+  if (!next) return sale.cuota || 0;
+  return Math.max(0, (next.monto || 0) - (next.monto_pagado || 0));
 }
 
 function accountOptions(accounts, selectedId) {
   return accounts
-    .map((a) => `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${a.name}</option>`)
+    .map((a) => `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${a.nombre}</option>`)
     .join("");
 }
 
@@ -41,81 +42,93 @@ function escHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function periodOptions(current) {
-  const p = current || "Mensual";
-  return ["Mensual", "Quincenal", "Contado"]
-    .map((o) => `<option ${p === o ? "selected" : ""}>${o}</option>`)
-    .join("");
-}
-
 function saleEditFormHtml(sale, accounts, isQuote) {
   const dateFields = isQuote
-    ? ""
-    : `<label>Fecha venta<input id="soldAt" type="date" value="${sale.sold_at || ""}"/></label>
-      <label>Fecha entrega<input id="deliveredAt" type="date" value="${sale.delivered_at || ""}"/></label>`;
+    ? `<label>Fecha cotización<input id="fechaCotizacion" type="date" value="${sale.fecha_cotizacion || ""}"/></label>`
+    : `<label>Fecha venta<input id="fechaVenta" type="date" value="${sale.fecha_venta || ""}"/>
+      <label>Fecha entrega<input id="fechaEntrega" type="date" value="${sale.fecha_entrega || ""}"/></label>`;
+  const partnerFields =
+    state.user?.rol === "admin"
+      ? `<label>Cuota tarjeta<input id="cuotaTarjeta" value="${escAttr(sale.cuota_tarjeta)}"/></label>
+      <label>Ganancia Vivi<input id="gananciaVivi" type="number" value="${sale.ganancia_vivi || 0}"/></label>
+      <label>Valor abonado Vivi<input id="abonadoVivi" type="number" value="${sale.abonado_vivi || 0}"/></label>`
+      : "";
   return `<div class="card">
-    <h2>${isQuote ? "Editar cotización" : "Editar venta"}</h2>
-    <p class="muted">${sale.client?.name || ""} · ${sale.client?.phone || ""}</p>
-    <p>Abonado ${money(sale.amount_paid)} · Pendiente ${money(sale.balance_pending)}</p>
-    <label>Producto<input id="product" value="${escAttr(sale.product_description)}"/></label>
+    <h2>${isQuote ? `Cotización N° ${sale.id}` : "Editar venta"}</h2>
+    <p class="muted">${sale.cliente?.nombre || ""} · ${sale.cliente?.telefono || ""}</p>
+    <p>Valor abonado ${money(sale.valor_abonado)} · Pendiente ${money(sale.pendiente)}</p>
+    <label>Producto<input id="producto" value="${escAttr(sale.producto)}"/></label>
     <div class="grid2">
-      <label>Costo<input id="cost" type="number" value="${sale.cost_price}"/></label>
-      <label>% margen<input id="margin" type="number" step="0.01" value="${sale.margin_rate}"/></label>
-      <label>Inicial<input id="down" type="number" value="${sale.down_payment}"/></label>
-      <label># Cuotas<input id="count" type="number" value="${sale.installment_count}"/></label>
-      <label>Periodo<select id="period">${periodOptions(sale.payment_period)}</select></label>
-      <label>Regla fecha cuota<input id="dueRule" value="${escAttr(sale.due_rule)}"/></label>
+      <label>Valor producto<input id="valor" type="number" value="${sale.valor}"/></label>
+      <label>%<input id="porcentaje" type="number" step="0.01" value="${sale.porcentaje}"/></label>
+      <label>Inicial<input id="inicial" type="number" value="${sale.inicial}"/></label>
+      <label># Cuotas<input id="numCuotas" type="number" value="${sale.num_cuotas}"/></label>
+      <label>Periodo de pago<select id="periodoPago">${periodOptions(sale.periodo_pago)}</select></label>
+      <label>Fecha cuota<input id="fechaCuota" value="${escAttr(sale.fecha_cuota)}"/></label>
       ${dateFields}
     </div>
+    <label>Observaciones<textarea id="observaciones" rows="2">${escHtml(sale.observaciones || "")}</textarea></label>
     <p class="muted" id="preview"></p>
-    <label>Cuenta compra<select id="purchaseAcc"><option value="">—</option>${accountOptions(accounts, sale.purchase_account_id)}</select></label>
-    <label>URL compra<input id="purchaseUrl" value="${escAttr(sale.purchase_url)}"/></label>
+    <label>Compra (URL)<input id="compra" value="${escAttr(sale.compra)}"/></label>
+    <label>Tarjeta<input id="tarjeta" value="${escAttr(sale.tarjeta)}"/></label>
+    <label>Cuenta compra<select id="cuentaCompra"><option value="">—</option>${accountOptions(accounts, sale.cuenta_compra_id)}</select></label>
+    ${partnerFields}
     <button type="button" class="secondary" id="saveSaleBtn">Guardar cambios</button>
     <p class="error" id="saveErr"></p>
   </div>`;
 }
 
 function buildSalePatchBody(root) {
-  const purchaseAcc = root.querySelector("#purchaseAcc").value;
+  const cuentaCompra = root.querySelector("#cuentaCompra").value;
   const body = {
-    product_description: root.querySelector("#product").value,
-    cost_price: Number(root.querySelector("#cost").value),
-    margin_rate: Number(root.querySelector("#margin").value),
-    down_payment: Number(root.querySelector("#down").value),
-    installment_count: Number(root.querySelector("#count").value),
-    payment_period: root.querySelector("#period").value,
-    due_rule: root.querySelector("#dueRule").value || null,
-    purchase_account_id: purchaseAcc ? Number(purchaseAcc) : null,
-    purchase_url: root.querySelector("#purchaseUrl")?.value || null,
+    producto: root.querySelector("#producto").value,
+    valor: Number(root.querySelector("#valor").value),
+    porcentaje: Number(root.querySelector("#porcentaje").value),
+    inicial: Number(root.querySelector("#inicial").value),
+    num_cuotas: Number(root.querySelector("#numCuotas").value),
+    periodo_pago: root.querySelector("#periodoPago").value,
+    fecha_cuota: root.querySelector("#fechaCuota").value || null,
+    cuenta_compra_id: cuentaCompra ? Number(cuentaCompra) : null,
+    compra: root.querySelector("#compra")?.value || null,
+    tarjeta: root.querySelector("#tarjeta")?.value || null,
+    observaciones: root.querySelector("#observaciones")?.value || null,
   };
-  const soldAt = root.querySelector("#soldAt");
-  const deliveredAt = root.querySelector("#deliveredAt");
-  if (soldAt?.value) body.sold_at = soldAt.value;
-  if (deliveredAt?.value) body.delivered_at = deliveredAt.value;
-  else if (deliveredAt) body.delivered_at = null;
+  const fechaVenta = root.querySelector("#fechaVenta");
+  const fechaEntrega = root.querySelector("#fechaEntrega");
+  const fechaCot = root.querySelector("#fechaCotizacion");
+  if (fechaVenta?.value) body.fecha_venta = fechaVenta.value;
+  if (fechaEntrega?.value) body.fecha_entrega = fechaEntrega.value;
+  else if (fechaEntrega) body.fecha_entrega = null;
+  if (fechaCot?.value) body.fecha_cotizacion = fechaCot.value;
+  const cuotaTarjeta = root.querySelector("#cuotaTarjeta");
+  const gananciaVivi = root.querySelector("#gananciaVivi");
+  const abonadoVivi = root.querySelector("#abonadoVivi");
+  if (cuotaTarjeta) body.cuota_tarjeta = cuotaTarjeta.value || null;
+  if (gananciaVivi) body.ganancia_vivi = Number(gananciaVivi.value || 0);
+  if (abonadoVivi) body.abonado_vivi = Number(abonadoVivi.value || 0);
   return body;
 }
 
 function wireSaleEditForm(root) {
   root.addEventListener("input", (e) => {
-    if (["cost", "margin", "down", "count", "period"].includes(e.target.id)) pricingPreview(root);
+    if (["valor", "porcentaje", "inicial", "numCuotas", "periodoPago"].includes(e.target.id)) pricingPreview(root);
   });
   pricingPreview(root);
 }
 
 async function pricingPreview(root) {
   const body = {
-    cost_price: Number(root.querySelector("#cost")?.value || 0),
-    margin_rate: Number(root.querySelector("#margin")?.value || 0),
-    down_payment: Number(root.querySelector("#down")?.value || 0),
-    installment_count: Number(root.querySelector("#count")?.value || 1),
-    payment_period: root.querySelector("#period")?.value || "Mensual",
+    valor: Number(root.querySelector("#valor")?.value || 0),
+    porcentaje: Number(root.querySelector("#porcentaje")?.value || 0),
+    inicial: Number(root.querySelector("#inicial")?.value || 0),
+    num_cuotas: Number(root.querySelector("#numCuotas")?.value || 1),
+    periodo_pago: root.querySelector("#periodoPago")?.value || "Mensual",
   };
   const p = await api("/api/pricing/preview", { method: "POST", body: JSON.stringify(body) });
   const el = root.querySelector("#preview");
   if (el) {
     el.textContent =
-      `Ganancia ${money(p.profit)} · Total ${money(p.total_charge)} · A financiar ${money(p.financed_amount)} · Cuota ${money(p.installment_amount)}`;
+      `Ganancia ${money(p.ganancia)} · Total ${money(p.total)} · Saldo financiado ${money(p.saldo_financiado)} · Cuota ${money(p.cuota)}`;
   }
   return p;
 }
@@ -128,12 +141,12 @@ function el(html) {
 
 function nav() {
   const links = state.user
-    ? `<a href="#/dashboard">Dashboard</a>
+    ? `<a href="#/dashboard">Panel de control</a>
        <a href="#/sales">Ventas</a>
        <a href="#/sales/new">Nueva venta / cotización</a>
        <a href="#/clients">Clientes</a>
        <a href="#/accounts">Cuentas</a>
-       <a href="#" id="logout">Salir (${state.user.display_name})</a>`
+       <a href="#" id="logout">Salir (${state.user.nombre_visible})</a>`
     : `<a href="#/login">Entrar</a>`;
   return `<header class="app-header"><strong>KYS</strong> <span class="muted">ventas · cuotas · clientes</span></header><nav>${links}</nav>`;
 }
@@ -173,33 +186,33 @@ async function viewLogin(root) {
 
 async function viewDashboard(root) {
   const d = await api("/api/sales/dashboard/seller");
-  const rows = d.upcoming_installments
+  const rows = d.proximas_cuotas
     .map(
       (u) =>
-        `<tr><td>${u.due_date || "—"}</td><td>${u.client_name}</td><td>${u.product}</td><td>${u.sequence === 0 ? "Inicial" : "#" + u.sequence}</td><td>${money(u.amount)}</td><td><a href="#/sales/${u.sale_id}">Ver</a></td></tr>`
+        `<tr><td>${u.fecha_vencimiento || "—"}</td><td>${u.cliente_nombre}</td><td>${u.producto}</td><td>${u.numero_cuota === 0 ? "Inicial" : "#" + u.numero_cuota}</td><td>${money(u.monto)}</td><td><a href="#/sales/${u.venta_id}">Ver</a></td></tr>`
     )
     .join("");
   root.appendChild(
-    el(`<div class="card"><h1>Dashboard — ${d.seller_name}</h1>
+    el(`<div class="card"><h1>Panel de control — ${d.nombre_vendedor}</h1>
     <div class="grid2">
-      <div><p class="muted">Recuperado</p><p class="stat" style="color:var(--ok)">${money(d.total_recovered)}</p></div>
-      <div><p class="muted">Pendiente</p><p class="stat" style="color:var(--warn)">${money(d.total_pending)}</p></div>
+      <div><p class="muted">Recuperado</p><p class="stat" style="color:var(--ok)">${money(d.total_recuperado)}</p></div>
+      <div><p class="muted">Pendiente</p><p class="stat" style="color:var(--warn)">${money(d.total_pendiente)}</p></div>
     </div>
-    <p class="muted">${d.sale_count} ventas</p></div>
+    <p class="muted">${d.num_ventas} ventas</p></div>
     <div class="card"><h2>Próximas cuotas</h2>
-    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuota</th><th>Monto</th><th></th></tr></thead>
+    <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuota</th><th>Valor</th><th></th></tr></thead>
     <tbody>${rows || "<tr><td colspan=6 class=muted>Sin cuotas próximas</td></tr>"}</tbody></table></div>`)
   );
 }
 
 async function viewSales(root) {
   const filter = state.salesFilter || "";
-  const qs = filter ? `?record_status=${filter}` : "";
+  const qs = filter ? `?estado_registro=${filter === "venta" ? "venta" : "cotizacion"}` : "";
   const sales = await api(`/api/sales${qs}`);
   const rows = sales
     .map(
       (s) =>
-        `<tr><td>${statusLabel(s)}</td><td>${s.sold_at || "—"}</td><td>${s.client?.name || s.client_id}</td><td>${s.product_description}</td><td>${money(s.balance_pending)}</td><td><a href="#/sales/${s.id}">Detalle</a></td></tr>`
+        `<tr><td>${statusLabel(s)}</td><td>${s.fecha_venta || s.fecha_cotizacion || "—"}</td><td>${s.cliente?.nombre || s.cliente_id}</td><td>${s.producto}</td><td>${money(s.pendiente)}</td><td><a href="#/sales/${s.id}">Detalle</a></td></tr>`
     )
     .join("");
   root.appendChild(
@@ -216,15 +229,15 @@ async function viewSales(root) {
 async function viewSaleDetail(root, id) {
   const sale = await api(`/api/sales/${id}`);
   const accounts = await api("/api/accounts");
-  const instRows = [...(sale.installments || [])]
-    .sort((a, b) => a.sequence - b.sequence)
+  const instRows = [...(sale.cuotas || [])]
+    .sort((a, b) => a.numero_cuota - b.numero_cuota)
     .map(
       (i) =>
-        `<tr><td>${i.sequence === 0 ? "Inicial (0)" : i.sequence}</td><td>${i.due_date || "—"}</td><td>${money(i.amount)}</td><td>${instStatusLabel(i.status)}</td><td>${money(i.amount_paid)}</td></tr>`
+        `<tr><td>${i.numero_cuota === 0 ? "Inicial (0)" : i.numero_cuota}</td><td>${i.fecha_vencimiento || "—"}</td><td>${money(i.monto)}</td><td>${instStatusLabel(i.estado)}</td><td>${money(i.monto_pagado)}</td></tr>`
     )
     .join("");
   const accOpts = accountOptions(accounts, null);
-  const isQuote = sale.record_status === "cotizacion";
+  const isQuote = sale.estado_registro === "cotizacion";
   const today = new Date().toISOString().slice(0, 10);
 
   const convertBlock = isQuote
@@ -234,8 +247,8 @@ async function viewSaleDetail(root, id) {
     <div id="confirmFields" hidden>
       <div class="grid2">
         <label>Fecha venta<input id="confirmSoldAt" type="date" value="${today}"/></label>
-        <label>Fecha entrega<input id="confirmDelivered" type="date" value="${sale.delivered_at || ""}"/></label>
-        <label>Total abonado hasta hoy<input id="confirmPaid" type="number" value="${sale.down_payment}"/></label>
+        <label>Fecha entrega<input id="confirmDelivered" type="date" value="${sale.fecha_entrega || ""}"/></label>
+        <label>Valor abonado hasta hoy<input id="confirmPaid" type="number" value="${sale.inicial}"/></label>
       </div>
       <button id="confirmBtn">Confirmar venta</button>
       <p class="error" id="confirmErr"></p>
@@ -245,13 +258,15 @@ async function viewSaleDetail(root, id) {
   const installmentsBlock = isQuote
     ? ""
     : `<div class="card"><h2>Cuotas</h2>
-    <table><thead><tr><th>#</th><th>Vence</th><th>Monto</th><th>Estado</th><th>Pagado</th></tr></thead><tbody>${instRows}</tbody></table></div>`;
+    <p class="muted">Cuotas pagadas: ${sale.cuotas_pagadas ?? "—"}</p>
+    <table><thead><tr><th>#</th><th>Vence</th><th>Valor</th><th>Estado</th><th>Abonado</th></tr></thead><tbody>${instRows}</tbody></table></div>`;
 
   const payBlock = isQuote
     ? ""
-    : `<div class="card"><h2>Registrar pago</h2>
-    <label>Monto<input id="payAmount" type="number" value="${nextPaymentAmount(sale)}"/></label>
-    <label>Fecha<input id="payDate" type="date" value="${today}"/></label>
+    : `<div class="card"><h2>Registrar cobro</h2>
+    <p class="muted">Cliente: ${escHtml(sale.cliente?.nombre || "")} · Vendedor: ${escHtml(state.user?.nombre_visible || "")}</p>
+    <label>Valor<input id="payAmount" type="number" value="${nextPaymentAmount(sale)}"/></label>
+    <label>Fecha de pago<input id="payDate" type="date" value="${today}"/></label>
     <label>Cuenta cobro<select id="payAccount"><option value="">—</option>${accOpts}</select></label>
     <button id="payBtn">Registrar</button>
     <p class="error" id="payErr"></p></div>`;
@@ -260,7 +275,7 @@ async function viewSaleDetail(root, id) {
     el(`<div>
     <p><strong>${statusLabel(sale)}</strong> #${sale.id}</p>
     ${saleEditFormHtml(sale, accounts, isQuote)}
-    <button type="button" class="secondary" id="printBtn">Imprimir</button>
+    <button type="button" class="secondary" id="printBtn">Imprimir cotización</button>
     ${convertBlock}
     ${installmentsBlock}
     ${payBlock}
@@ -290,9 +305,9 @@ async function viewSaleDetail(root, id) {
         await api(`/api/sales/${id}/payments`, {
           method: "POST",
           body: JSON.stringify({
-            amount: Number(root.querySelector("#payAmount").value),
-            paid_at: root.querySelector("#payDate").value,
-            collection_account_id: acc ? Number(acc) : null,
+            monto: Number(root.querySelector("#payAmount").value),
+            fecha_pago: root.querySelector("#payDate").value,
+            cuenta_cobro_id: acc ? Number(acc) : null,
           }),
         });
         render();
@@ -317,16 +332,16 @@ async function viewSaleDetail(root, id) {
           root.querySelector("#confirmErr").textContent = "Marca «Convertir a venta» primero.";
           return;
         }
-        const purchaseAccEl = root.querySelector("#purchaseAcc");
+        const purchaseAccEl = root.querySelector("#cuentaCompra");
         await api(`/api/sales/${id}/confirm`, {
           method: "POST",
           body: JSON.stringify({
-            sold_at: root.querySelector("#confirmSoldAt").value,
-            delivered_at: delivered || null,
-            down_payment: Number(root.querySelector("#down").value),
-            amount_paid: Number(root.querySelector("#confirmPaid").value),
-            due_rule: root.querySelector("#dueRule").value || null,
-            purchase_account_id: purchaseAccEl?.value ? Number(purchaseAccEl.value) : null,
+            fecha_venta: root.querySelector("#confirmSoldAt").value,
+            fecha_entrega: delivered || null,
+            inicial: Number(root.querySelector("#inicial").value),
+            valor_abonado: Number(root.querySelector("#confirmPaid").value),
+            fecha_cuota: root.querySelector("#fechaCuota").value || null,
+            cuenta_compra_id: purchaseAccEl?.value ? Number(purchaseAccEl.value) : null,
           }),
         });
         location.hash = `#/sales/${id}`;
@@ -342,47 +357,50 @@ async function viewNewSale(root, startAsQuote = false) {
   const [clients, accounts, users] = await Promise.all([
     api("/api/clients"),
     api("/api/accounts"),
-    state.user.role === "admin" ? api("/api/auth/users") : Promise.resolve([]),
+    state.user.rol === "admin" ? api("/api/auth/users") : Promise.resolve([]),
   ]);
-  const clientOpts = clients.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
-  const accOpts = accounts.map((a) => `<option value="${a.id}">${a.name}</option>`).join("");
-  const sellerOpts = users.map((u) => `<option value="${u.id}">${u.display_name}</option>`).join("");
+  const clientOpts = clients.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join("");
+  const accOpts = accounts.map((a) => `<option value="${a.id}">${a.nombre}</option>`).join("");
+  const sellerOpts = users.map((u) => `<option value="${u.id}">${u.nombre_visible}</option>`).join("");
+  const today = new Date().toISOString().slice(0, 10);
 
   root.appendChild(
     el(`<div class="card"><h1>Nueva venta / cotización</h1>
     <label class="check-row"><input type="checkbox" id="isQuote" ${startAsQuote ? "checked" : ""}/> Solo cotización (aún no es venta)</label>
-    <label>Cliente<select id="clientId"><option value="">—</option>${clientOpts}</select></label>
-    <label>Producto<input id="product" /></label>
+    <label>Cliente<select id="clienteId"><option value="">—</option>${clientOpts}</select></label>
+    <label>Producto<input id="producto" /></label>
     <div class="grid2">
-      <label>Costo (Valor)<input id="cost" type="number" /></label>
-      <label>% margen<input id="margin" type="number" step="0.01" value="0.3" /></label>
-      <label>Inicial<input id="down" type="number" value="0" /></label>
-      <label># Cuotas<input id="count" type="number" value="4" /></label>
-      <label>Periodo<select id="period"><option>Mensual</option><option>Quincenal</option><option>Contado</option></select></label>
-      <label>Regla fecha cuota<input id="dueRule" placeholder="30 de cada mes" /></label>
+      <label>Valor producto<input id="valor" type="number" /></label>
+      <label>%<input id="porcentaje" type="number" step="0.01" value="0.3" /></label>
+      <label>Inicial<input id="inicial" type="number" value="0" /></label>
+      <label># Cuotas<input id="numCuotas" type="number" value="4" /></label>
+      <label>Periodo de pago<select id="periodoPago">${periodOptions("Mensual")}</select></label>
+      <label>Fecha cuota<input id="fechaCuota" placeholder="30 de cada mes" /></label>
     </div>
+    <label>Observaciones<textarea id="observaciones" rows="2"></textarea></label>
     <p class="muted" id="preview"></p>
-    <label>Cuenta compra<select id="purchaseAcc"><option value="">—</option>${accOpts}</select></label>
-    ${state.user.role === "admin" ? `<label>Vendedor<select id="sellerId"><option value="">—</option>${sellerOpts}</select></label>` : ""}
-    <label>URL compra<input id="purchaseUrl" /></label>
+    <label>Cuenta compra<select id="cuentaCompra"><option value="">—</option>${accOpts}</select></label>
+    ${state.user.rol === "admin" ? `<label>Vendedor<select id="vendedorId"><option value="">—</option>${sellerOpts}</select></label>` : ""}
+    <label>Compra (URL)<input id="compra" /></label>
+    <label>Tarjeta<input id="tarjeta" /></label>
     <button id="saveSale">Guardar</button>
     <p class="error" id="saleErr"></p></div>`)
   );
 
   async function refreshPreview() {
     const body = {
-      cost_price: Number(root.querySelector("#cost").value || 0),
-      margin_rate: Number(root.querySelector("#margin").value || 0),
-      down_payment: Number(root.querySelector("#down").value || 0),
-      installment_count: Number(root.querySelector("#count").value || 1),
-      payment_period: root.querySelector("#period").value,
+      valor: Number(root.querySelector("#valor").value || 0),
+      porcentaje: Number(root.querySelector("#porcentaje").value || 0),
+      inicial: Number(root.querySelector("#inicial").value || 0),
+      num_cuotas: Number(root.querySelector("#numCuotas").value || 1),
+      periodo_pago: root.querySelector("#periodoPago").value,
     };
     const p = await api("/api/pricing/preview", { method: "POST", body: JSON.stringify(body) });
     root.querySelector("#preview").textContent =
-      `Ganancia ${money(p.profit)} · Total ${money(p.total_charge)} · A financiar ${money(p.financed_amount)} · Cuota ${money(p.installment_amount)}`;
+      `Ganancia ${money(p.ganancia)} · Total ${money(p.total)} · Saldo financiado ${money(p.saldo_financiado)} · Cuota ${money(p.cuota)}`;
   }
   root.addEventListener("input", (e) => {
-    if (["cost", "margin", "down", "count", "period"].includes(e.target.id)) refreshPreview();
+    if (["valor", "porcentaje", "inicial", "numCuotas", "periodoPago"].includes(e.target.id)) refreshPreview();
   });
   refreshPreview();
 
@@ -391,33 +409,36 @@ async function viewNewSale(root, startAsQuote = false) {
       const p = await api("/api/pricing/preview", {
         method: "POST",
         body: JSON.stringify({
-          cost_price: Number(root.querySelector("#cost").value),
-          margin_rate: Number(root.querySelector("#margin").value),
-          down_payment: Number(root.querySelector("#down").value),
-          installment_count: Number(root.querySelector("#count").value),
-          payment_period: root.querySelector("#period").value,
+          valor: Number(root.querySelector("#valor").value),
+          porcentaje: Number(root.querySelector("#porcentaje").value),
+          inicial: Number(root.querySelector("#inicial").value),
+          num_cuotas: Number(root.querySelector("#numCuotas").value),
+          periodo_pago: root.querySelector("#periodoPago").value,
         }),
       });
       const payload = {
-        client_id: Number(root.querySelector("#clientId").value),
-        product_description: root.querySelector("#product").value,
-        cost_price: Number(root.querySelector("#cost").value),
-        margin_rate: Number(root.querySelector("#margin").value),
-        down_payment: Number(root.querySelector("#down").value),
-        installment_count: Number(root.querySelector("#count").value),
-        payment_period: root.querySelector("#period").value,
-        due_rule: root.querySelector("#dueRule").value || null,
-        purchase_account_id: root.querySelector("#purchaseAcc").value
-          ? Number(root.querySelector("#purchaseAcc").value)
+        cliente_id: Number(root.querySelector("#clienteId").value),
+        producto: root.querySelector("#producto").value,
+        valor: Number(root.querySelector("#valor").value),
+        porcentaje: Number(root.querySelector("#porcentaje").value),
+        inicial: Number(root.querySelector("#inicial").value),
+        num_cuotas: Number(root.querySelector("#numCuotas").value),
+        periodo_pago: root.querySelector("#periodoPago").value,
+        fecha_cuota: root.querySelector("#fechaCuota").value || null,
+        observaciones: root.querySelector("#observaciones").value || null,
+        cuenta_compra_id: root.querySelector("#cuentaCompra").value
+          ? Number(root.querySelector("#cuentaCompra").value)
           : null,
-        purchase_url: root.querySelector("#purchaseUrl").value || null,
-        total_charge: p.total_charge,
-        installment_amount: p.installment_amount,
-        profit: p.profit,
-        record_status: root.querySelector("#isQuote").checked ? "cotizacion" : "venta",
+        compra: root.querySelector("#compra").value || null,
+        tarjeta: root.querySelector("#tarjeta").value || null,
+        total: p.total,
+        cuota: p.cuota,
+        ganancia: p.ganancia,
+        estado_registro: root.querySelector("#isQuote").checked ? "cotizacion" : "venta",
+        fecha_cotizacion: root.querySelector("#isQuote").checked ? today : null,
       };
-      const sellerEl = root.querySelector("#sellerId");
-      if (sellerEl?.value) payload.seller_id = Number(sellerEl.value);
+      const sellerEl = root.querySelector("#vendedorId");
+      if (sellerEl?.value) payload.vendedor_id = Number(sellerEl.value);
       const sale = await api("/api/sales", { method: "POST", body: JSON.stringify(payload) });
       location.hash = `#/sales/${sale.id}`;
       render();
@@ -431,43 +452,43 @@ async function viewClients(root) {
   const clients = await api("/api/clients");
   root.appendChild(
     el(`<div class="card"><h1>Clientes</h1>
-    <label>Pegar bloque Cliente<textarea id="raw" rows="4"></textarea></label>
-    <button id="parseBtn" class="secondary">Parsear</button>
+    <label>Pegar bloque cliente<textarea id="raw" rows="4"></textarea></label>
+    <button id="parseBtn" class="secondary">Analizar texto</button>
     <label>Nombre<input id="cName"/></label>
     <label>Teléfono<input id="cPhone"/></label>
     <label>Email<input id="cEmail" type="email"/></label>
     <label>Dirección<input id="cAddress"/></label>
-    <label>Cédula<input id="cId"/></label>
+    <label>Identificación<input id="cId"/></label>
     <button id="addClient">Agregar</button>
-    <table style="margin-top:1rem"><thead><tr><th>Nombre</th><th>Tel</th><th>Email</th><th>Dirección</th></tr></thead>
+    <table style="margin-top:1rem"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Dirección</th></tr></thead>
     <tbody>${clients
       .map(
         (c) =>
-          `<tr><td>${escHtml(c.name)}</td><td>${escHtml(c.phone || "")}</td><td>${escHtml(c.email || "")}</td><td>${escHtml(c.address || "")}</td></tr>`
+          `<tr><td>${escHtml(c.nombre)}</td><td>${escHtml(c.telefono || "")}</td><td>${escHtml(c.email || "")}</td><td>${escHtml(c.direccion || "")}</td></tr>`
       )
       .join("")}</tbody></table></div>`)
   );
   root.querySelector("#parseBtn").onclick = async () => {
     const parsed = await api("/api/clients/parse", {
       method: "POST",
-      body: JSON.stringify({ name: "", raw_client_text: root.querySelector("#raw").value }),
+      body: JSON.stringify({ nombre: "", texto_cliente: root.querySelector("#raw").value }),
     });
-    root.querySelector("#cName").value = parsed.name || "";
-    root.querySelector("#cPhone").value = parsed.phone || "";
+    root.querySelector("#cName").value = parsed.nombre || "";
+    root.querySelector("#cPhone").value = parsed.telefono || "";
     root.querySelector("#cEmail").value = parsed.email || "";
-    root.querySelector("#cAddress").value = parsed.address || "";
-    root.querySelector("#cId").value = parsed.identification || "";
+    root.querySelector("#cAddress").value = parsed.direccion || "";
+    root.querySelector("#cId").value = parsed.identificacion || "";
   };
   root.querySelector("#addClient").onclick = async () => {
     await api("/api/clients", {
       method: "POST",
       body: JSON.stringify({
-        name: root.querySelector("#cName").value,
-        phone: root.querySelector("#cPhone").value,
+        nombre: root.querySelector("#cName").value,
+        telefono: root.querySelector("#cPhone").value,
         email: root.querySelector("#cEmail").value || null,
-        address: root.querySelector("#cAddress").value || null,
-        identification: root.querySelector("#cId").value,
-        raw_client_text: root.querySelector("#raw").value,
+        direccion: root.querySelector("#cAddress").value || null,
+        identificacion: root.querySelector("#cId").value,
+        texto_cliente: root.querySelector("#raw").value,
       }),
     });
     render();
@@ -482,8 +503,9 @@ function accountTypeLabel(t) {
 
 async function viewAccounts(root) {
   const summary = await api("/api/accounts/summary");
-  const { accounts, movements } = summary;
-  const isAdmin = state.user.role === "admin";
+  const accounts = summary.cuentas || summary.accounts || [];
+  const movements = summary.movimientos || summary.movements || [];
+  const isAdmin = state.user.rol === "admin";
 
   const adminForm = isAdmin
     ? `<div class="grid2">
@@ -492,20 +514,20 @@ async function viewAccounts(root) {
     <label>Saldo inicial<input id="accOpening" type="number" value="0"/></label>
     </div>
     <button id="addAcc">Agregar cuenta</button>`
-    : `<p class="muted">Solo admin puede crear cuentas.</p>`;
+    : `<p class="muted">Solo administrador puede crear cuentas.</p>`;
 
   const balanceRows = accounts
     .map(
       (a) =>
         `<tr data-id="${a.id}">
-      <td>${escHtml(a.name)}</td>
-      <td>${accountTypeLabel(a.account_type)}</td>
-      <td>${money(a.total_purchased)}</td>
-      <td>${money(a.total_received)}</td>
+      <td>${escHtml(a.nombre || a.name)}</td>
+      <td>${accountTypeLabel(a.tipo_cuenta || a.account_type)}</td>
+      <td>${money(a.total_comprado ?? a.total_purchased)}</td>
+      <td>${money(a.total_recibido ?? a.total_received)}</td>
       <td>${
         isAdmin
-          ? `<input type="number" class="opening-input" value="${a.opening_balance}" style="max-width:120px"/>`
-          : money(a.opening_balance)
+          ? `<input type="number" class="opening-input" value="${a.saldo_inicial ?? a.opening_balance}" style="max-width:120px"/>`
+          : money(a.saldo_inicial ?? a.opening_balance)
       }</td>
       <td><strong>${money(a.balance)}</strong></td>
       ${isAdmin ? `<td><button type="button" class="secondary save-opening">Guardar saldo</button></td>` : ""}
@@ -515,24 +537,25 @@ async function viewAccounts(root) {
 
   const movementRows = movements
     .map((m) => {
-      const acc = accounts.find((a) => a.id === m.account_id);
-      const kind = m.kind === "purchase" ? "Compra" : "Cobro";
-      const sign = m.kind === "purchase" ? "−" : "+";
-      return `<tr><td>${m.date || "—"}</td><td>${escHtml(acc?.name || m.account_id)}</td><td>${kind}</td><td>${sign} ${money(m.amount)}</td><td>${escHtml(m.reference)}</td><td class="muted">${escHtml(m.description)}</td></tr>`;
+      const accId = m.cuenta_id ?? m.account_id;
+      const acc = accounts.find((a) => a.id === accId);
+      const tipo = (m.tipo || m.kind) === "compra" || m.kind === "purchase" ? "Compra" : "Cobro";
+      const sign = tipo === "Compra" ? "−" : "+";
+      return `<tr><td>${m.fecha || m.date || "—"}</td><td>${escHtml(acc?.nombre || acc?.name || accId)}</td><td>${tipo}</td><td>${sign} ${money(m.monto ?? m.amount)}</td><td>${escHtml(m.referencia || m.reference)}</td><td class="muted">${escHtml(m.descripcion || m.description)}</td></tr>`;
     })
     .join("");
 
   root.appendChild(
     el(`<div>
     <div class="card"><h1>Cuentas</h1>
-    <p class="muted">Comprado = costo de ventas con esa cuenta de compra. Recibido = pagos con esa cuenta de cobro. Balance = saldo inicial + recibido − comprado.</p>
+    <p class="muted">Comprado = valor de ventas con esa cuenta de compra. Recibido = cobros con esa cuenta. Balance = saldo inicial + recibido − comprado.</p>
     ${adminForm}
     <table style="margin-top:1.25rem"><thead><tr>
       <th>Cuenta</th><th>Tipo</th><th>Comprado</th><th>Recibido</th><th>Saldo inicial</th><th>Balance</th>${isAdmin ? "<th></th>" : ""}
     </tr></thead><tbody>${balanceRows || "<tr><td colspan=7 class=muted>Sin cuentas</td></tr>"}</tbody></table></div>
     <div class="card"><h2>Movimientos</h2>
-    <table><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Monto</th><th>Ref</th><th>Detalle</th></tr></thead>
-    <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (asigna cuenta en ventas y pagos)</td></tr>"}</tbody></table></div></div>`)
+    <table><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Valor</th><th>Ref</th><th>Detalle</th></tr></thead>
+    <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (asigna cuenta en ventas y cobros)</td></tr>"}</tbody></table></div></div>`)
   );
 
   const addBtn = root.querySelector("#addAcc");
@@ -541,9 +564,9 @@ async function viewAccounts(root) {
       await api("/api/accounts", {
         method: "POST",
         body: JSON.stringify({
-          name: root.querySelector("#accName").value,
-          account_type: root.querySelector("#accType").value,
-          opening_balance: Number(root.querySelector("#accOpening").value || 0),
+          nombre: root.querySelector("#accName").value,
+          tipo_cuenta: root.querySelector("#accType").value,
+          saldo_inicial: Number(root.querySelector("#accOpening").value || 0),
         }),
       });
       render();
@@ -558,7 +581,7 @@ async function viewAccounts(root) {
       try {
         await api(`/api/accounts/${id}`, {
           method: "PATCH",
-          body: JSON.stringify({ opening_balance: opening }),
+          body: JSON.stringify({ saldo_inicial: opening }),
         });
         render();
       } catch (e) {

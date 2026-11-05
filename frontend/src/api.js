@@ -1,6 +1,6 @@
 export async function api(path, options = {}) {
   if (typeof google === "undefined" || !google.script?.run) {
-    throw new Error("Open KYS from the Google Apps Script web app URL (not localhost).");
+    throw new Error("Abre KYS desde la URL de la app web de Google Apps Script (no localhost).");
   }
 
   const token = sessionStorage.getItem("kys_token") || "";
