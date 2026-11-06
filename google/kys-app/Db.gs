@@ -5,21 +5,33 @@ function getSheet_(name) {
   return sh;
 }
 
+function headersForSheet_(sh) {
+  var name = sh.getName();
+  var headers = KYS_HEADERS[name];
+  if (!headers) throw new Error('Encabezados desconocidos para ' + name);
+  return headers;
+}
+
 function sheetToObjects_(sh) {
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
-  var lastCol = sh.getLastColumn();
-  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var headers = headersForSheet_(sh);
+  var lastCol = headers.length;
   var rows = sh.getRange(2, 1, lastRow, lastCol).getValues();
   var out = [];
   for (var i = 0; i < rows.length; i++) {
-    var obj = {};
-    for (var c = 0; c < headers.length; c++) {
-      obj[String(headers[c])] = normalizeCell_(rows[i][c]);
-    }
+    var obj = rowToObject_(headers, rows[i]);
     if (obj.id !== '' && obj.id != null) out.push(obj);
   }
   return out;
+}
+
+function rowToObject_(headers, rowValues) {
+  var obj = {};
+  for (var c = 0; c < headers.length; c++) {
+    obj[headers[c]] = normalizeCell_(rowValues[c]);
+  }
+  return obj;
 }
 
 function normalizeCell_(v) {
@@ -29,10 +41,22 @@ function normalizeCell_(v) {
   return v;
 }
 
+function findSheetRowById_(sh, id) {
+  var headers = headersForSheet_(sh);
+  var idCol = headers.indexOf('id') + 1;
+  if (idCol < 1) return 0;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 0;
+  var ids = sh.getRange(2, idCol, lastRow, idCol).getValues();
+  id = Number(id);
+  for (var i = 0; i < ids.length; i++) {
+    if (Number(ids[i][0]) === id) return i + 2;
+  }
+  return 0;
+}
+
 function writeObjects_(sh, objects) {
-  var name = sh.getName();
-  var headers = KYS_HEADERS[name];
-  if (!headers) throw new Error('Encabezados desconocidos para ' + name);
+  var headers = headersForSheet_(sh);
   sh.clearContents();
   sh.getRange(1, 1, 1, headers.length).setValues([headers]);
   if (!objects.length) return;
@@ -43,18 +67,21 @@ function writeObjects_(sh, objects) {
 }
 
 function nextId_(sh) {
-  var rows = sheetToObjects_(sh);
+  var headers = headersForSheet_(sh);
+  var idCol = headers.indexOf('id') + 1;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return 1;
+  var vals = sh.getRange(2, idCol, lastRow, idCol).getValues();
   var max = 0;
-  rows.forEach(function (r) {
-    var id = Number(r.id);
-    if (!isNaN(id) && id > max) max = id;
+  vals.forEach(function (v) {
+    var n = Number(v[0]);
+    if (!isNaN(n) && n > max) max = n;
   });
   return max + 1;
 }
 
 function appendObject_(sh, obj) {
-  var name = sh.getName();
-  var headers = KYS_HEADERS[name];
+  var headers = headersForSheet_(sh);
   if (!obj.id) obj.id = nextId_(sh);
   var row = headers.map(function (h) { return obj[h] != null ? obj[h] : ''; });
   sh.appendRow(row);
@@ -62,37 +89,41 @@ function appendObject_(sh, obj) {
 }
 
 function findById_(sh, id) {
-  var rows = sheetToObjects_(sh);
-  id = Number(id);
-  for (var i = 0; i < rows.length; i++) {
-    if (Number(rows[i].id) === id) return rows[i];
-  }
-  return null;
+  var rowNum = findSheetRowById_(sh, id);
+  if (!rowNum) return null;
+  var headers = headersForSheet_(sh);
+  var values = sh.getRange(rowNum, 1, rowNum, headers.length).getValues()[0];
+  return rowToObject_(headers, values);
 }
 
 function updateById_(sh, id, patch) {
-  var rows = sheetToObjects_(sh);
-  id = Number(id);
-  var found = false;
-  var updated = rows.map(function (r) {
-    if (Number(r.id) !== id) return r;
-    found = true;
-    var copy = {};
-    Object.keys(r).forEach(function (k) { copy[k] = r[k]; });
-    Object.keys(patch).forEach(function (k) {
-      if (patch[k] !== undefined) copy[k] = patch[k];
-    });
-    return copy;
+  var rowNum = findSheetRowById_(sh, id);
+  if (!rowNum) return null;
+  var headers = headersForSheet_(sh);
+  var row = findById_(sh, id);
+  Object.keys(patch).forEach(function (k) {
+    if (patch[k] !== undefined) row[k] = patch[k];
   });
-  if (!found) return null;
-  writeObjects_(sh, updated);
-  return findById_(sh, id);
+  var out = headers.map(function (h) { return row[h] != null ? row[h] : ''; });
+  sh.getRange(rowNum, 1, rowNum, headers.length).setValues([out]);
+  return row;
 }
 
 function deleteWhere_(sh, predicate) {
   var rows = sheetToObjects_(sh);
   var kept = rows.filter(function (r) { return !predicate(r); });
   writeObjects_(sh, kept);
+}
+
+function deleteRowsWhereColumnEquals_(sh, columnName, value) {
+  var headers = headersForSheet_(sh);
+  var col = headers.indexOf(columnName) + 1;
+  if (col < 1) return;
+  var lastRow = sh.getLastRow();
+  for (var r = lastRow; r >= 2; r--) {
+    var cell = sh.getRange(r, col).getValue();
+    if (Number(cell) === Number(value)) sh.deleteRow(r);
+  }
 }
 
 function num_(v) {
@@ -117,4 +148,22 @@ function countPaidInstallments_(installments) {
     if (st === 'pagada') n += 1;
   });
   return n;
+}
+
+function indexRowsById_(rows) {
+  var map = {};
+  rows.forEach(function (r) {
+    map[Number(r.id)] = r;
+  });
+  return map;
+}
+
+function groupInstallmentsBySaleId_(rows) {
+  var bySale = {};
+  rows.forEach(function (r) {
+    var vid = Number(r.venta_id != null ? r.venta_id : r.sale_id);
+    if (!bySale[vid]) bySale[vid] = [];
+    bySale[vid].push(r);
+  });
+  return bySale;
 }

@@ -5,5 +5,9 @@ google/kys-app/Index.html
 google/kys-app/.clasp.json
 .DS_Store
 .env
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+supabase/.temp/
 *.xlsx
 *.pptx

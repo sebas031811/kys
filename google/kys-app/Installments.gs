@@ -77,11 +77,7 @@ function installmentOut_(row) {
 
 function saveInstallmentsForSale_(saleId, installmentRows) {
   var sh = getSheet_(KYS_CONFIG.SHEETS.INSTALLMENTS);
-  var q = KYS_FIELDS.CUOTA;
-  deleteWhere_(sh, function (r) {
-    var vid = r.venta_id != null ? r.venta_id : r.sale_id;
-    return Number(vid) === Number(saleId);
-  });
+  deleteRowsWhereColumnEquals_(sh, KYS_FIELDS.CUOTA.venta_id, saleId);
   installmentRows.forEach(function (row) {
     var seq = row.numero_cuota != null ? row.numero_cuota : row.sequence;
     appendObject_(sh, {

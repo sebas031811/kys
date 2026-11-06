@@ -1,5 +1,10 @@
 import { api, clearSession } from "./api.js";
+import { getClientes, getCuentas, invalidateClientes, invalidateCuentas, invalidateAll } from "./cache.js";
+import { initLoading } from "./loading.js";
 import { periodOptions } from "./labels.js";
+import { computeSalePricing } from "./pricing.js";
+
+initLoading();
 
 let state = { user: null, route: "", params: "" };
 
@@ -116,7 +121,7 @@ function wireSaleEditForm(root) {
   pricingPreview(root);
 }
 
-async function pricingPreview(root) {
+function pricingPreview(root) {
   const body = {
     valor: Number(root.querySelector("#valor")?.value || 0),
     porcentaje: Number(root.querySelector("#porcentaje")?.value || 0),
@@ -124,7 +129,7 @@ async function pricingPreview(root) {
     num_cuotas: Number(root.querySelector("#numCuotas")?.value || 1),
     periodo_pago: root.querySelector("#periodoPago")?.value || "Mensual",
   };
-  const p = await api("/api/pricing/preview", { method: "POST", body: JSON.stringify(body) });
+  const p = computeSalePricing(body);
   const el = root.querySelector("#preview");
   if (el) {
     el.textContent =
@@ -228,7 +233,7 @@ async function viewSales(root) {
 
 async function viewSaleDetail(root, id) {
   const sale = await api(`/api/sales/${id}`);
-  const accounts = await api("/api/accounts");
+  const accounts = sale.cuentas || (await getCuentas(api));
   const instRows = [...(sale.cuotas || [])]
     .sort((a, b) => a.numero_cuota - b.numero_cuota)
     .map(
@@ -286,6 +291,7 @@ async function viewSaleDetail(root, id) {
   root.querySelector("#saveSaleBtn").onclick = async () => {
     try {
       await api(`/api/sales/${id}`, { method: "PATCH", body: JSON.stringify(buildSalePatchBody(root)) });
+      invalidateAll();
       render();
     } catch (e) {
       root.querySelector("#saveErr").textContent = e.message;
@@ -355,8 +361,8 @@ async function viewSaleDetail(root, id) {
 
 async function viewNewSale(root, startAsQuote = false) {
   const [clients, accounts, users] = await Promise.all([
-    api("/api/clients"),
-    api("/api/accounts"),
+    getClientes(api),
+    getCuentas(api),
     state.user.rol === "admin" ? api("/api/auth/users") : Promise.resolve([]),
   ]);
   const clientOpts = clients.map((c) => `<option value="${c.id}">${c.nombre}</option>`).join("");
@@ -387,7 +393,7 @@ async function viewNewSale(root, startAsQuote = false) {
     <p class="error" id="saleErr"></p></div>`)
   );
 
-  async function refreshPreview() {
+  function refreshPreview() {
     const body = {
       valor: Number(root.querySelector("#valor").value || 0),
       porcentaje: Number(root.querySelector("#porcentaje").value || 0),
@@ -395,7 +401,7 @@ async function viewNewSale(root, startAsQuote = false) {
       num_cuotas: Number(root.querySelector("#numCuotas").value || 1),
       periodo_pago: root.querySelector("#periodoPago").value,
     };
-    const p = await api("/api/pricing/preview", { method: "POST", body: JSON.stringify(body) });
+    const p = computeSalePricing(body);
     root.querySelector("#preview").textContent =
       `Ganancia ${money(p.ganancia)} · Total ${money(p.total)} · Saldo financiado ${money(p.saldo_financiado)} · Cuota ${money(p.cuota)}`;
   }
@@ -406,15 +412,12 @@ async function viewNewSale(root, startAsQuote = false) {
 
   root.querySelector("#saveSale").onclick = async () => {
     try {
-      const p = await api("/api/pricing/preview", {
-        method: "POST",
-        body: JSON.stringify({
-          valor: Number(root.querySelector("#valor").value),
-          porcentaje: Number(root.querySelector("#porcentaje").value),
-          inicial: Number(root.querySelector("#inicial").value),
-          num_cuotas: Number(root.querySelector("#numCuotas").value),
-          periodo_pago: root.querySelector("#periodoPago").value,
-        }),
+      const p = computeSalePricing({
+        valor: Number(root.querySelector("#valor").value),
+        porcentaje: Number(root.querySelector("#porcentaje").value),
+        inicial: Number(root.querySelector("#inicial").value),
+        num_cuotas: Number(root.querySelector("#numCuotas").value),
+        periodo_pago: root.querySelector("#periodoPago").value,
       });
       const payload = {
         cliente_id: Number(root.querySelector("#clienteId").value),
@@ -440,6 +443,7 @@ async function viewNewSale(root, startAsQuote = false) {
       const sellerEl = root.querySelector("#vendedorId");
       if (sellerEl?.value) payload.vendedor_id = Number(sellerEl.value);
       const sale = await api("/api/sales", { method: "POST", body: JSON.stringify(payload) });
+      invalidateAll();
       location.hash = `#/sales/${sale.id}`;
       render();
     } catch (e) {
@@ -491,6 +495,7 @@ async function viewClients(root) {
         texto_cliente: root.querySelector("#raw").value,
       }),
     });
+    invalidateClientes();
     render();
   };
 }
@@ -569,6 +574,7 @@ async function viewAccounts(root) {
           saldo_inicial: Number(root.querySelector("#accOpening").value || 0),
         }),
       });
+      invalidateCuentas();
       render();
     };
   }

@@ -36,10 +36,17 @@ function authLogin_(email, password) {
 function authMe_(token) {
   var email = sessionEmail_(token);
   if (!email) throw new Error('No autenticado');
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'kys_user_profile_' + String(email).toLowerCase();
+  var cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   var rows = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.USERS));
   for (var i = 0; i < rows.length; i++) {
     if (String(rows[i].email).toLowerCase() === String(email).toLowerCase()) {
-      return userOut_(rows[i]);
+      var user = userOut_(rows[i]);
+      cache.put(cacheKey, JSON.stringify(user), 300);
+      return user;
     }
   }
   throw new Error('No autenticado');

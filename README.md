@@ -29,7 +29,9 @@ Build en CI (no usa `embed-gas`; eso es solo para Google):
 npm ci --prefix frontend && npm run build:pages --prefix frontend
 ```
 
-**Directorio de salida:** `frontend/dist` · **Build command** en el dashboard: el comando de arriba (no hace falta `npm ci` en la raíz). La app en Pages aún necesita Supabase (o GAS) para datos; ver `wrangler.toml`.
+**Directorio de salida:** `frontend/dist` · **Build command** en el dashboard: el comando de arriba (no hace falta `npm ci` en la raíz).
+
+**Backend en Pages (Parte 3):** con `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` la UI llama a la Edge Function `kys-api`. Sin esas variables verás el error de Google Apps Script. Guía completa: [supabase/PART3.md](supabase/PART3.md).
 
 ## Repo layout
 

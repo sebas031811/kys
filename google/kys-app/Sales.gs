@@ -34,7 +34,7 @@ function saleOut_(row, withRelated) {
     cliente: null,
   };
   if (withRelated) {
-    var client = getClientById_(sale.cliente_id);
+    var client = findById_(getSheet_(KYS_CONFIG.SHEETS.CLIENTS), sale.cliente_id);
     if (client) sale.cliente = clientOut_(client);
     sale.cuotas = loadInstallmentsForSale_(sale.id);
     if (sale.cuotas_pagadas == null) sale.cuotas_pagadas = countPaidInstallments_(sale.cuotas);
@@ -62,7 +62,9 @@ function getSale_(token, saleId) {
   if (!row) throw new Error('Venta no encontrada');
   var sellerId = row.vendedor_id || row.seller_id;
   if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
-  return saleOut_(row, true);
+  var sale = saleOut_(row, true);
+  sale.cuentas = listAccounts_();
+  return sale;
 }
 
 function pricingFieldsFromCreate_(body) {
@@ -287,7 +289,16 @@ function recordPayment_(token, saleId, body) {
 
 function sellerDashboard_(token) {
   var me = requireUser_(token);
-  var sales = listSales_(token, 'venta');
+  var salesRows = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.SALES));
+  salesRows = salesRows.filter(function (r) {
+    var estado = r.estado_registro || r.record_status;
+    if (estado !== 'venta') return false;
+    var sellerId = r.vendedor_id || r.seller_id;
+    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) return false;
+    return true;
+  });
+
+  var sales = salesRows.map(function (r) { return saleOut_(r, false); });
   var recovered = 0;
   var pending = 0;
   sales.forEach(function (s) {
@@ -295,17 +306,26 @@ function sellerDashboard_(token) {
     pending += num_(s.pendiente);
   });
 
+  var allInstRows = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.INSTALLMENTS));
+  var instBySale = groupInstallmentsBySaleId_(allInstRows);
+  var clientById = indexRowsById_(sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.CLIENTS)));
+
   var upcoming = [];
   var until = new Date();
   until.setDate(until.getDate() + 30);
   var untilStr = formatIsoDate_(until);
 
   sales.forEach(function (s) {
-    var insts = loadInstallmentsForSale_(s.id);
-    insts.forEach(function (inst) {
+    var rawInst = instBySale[s.id] || [];
+    rawInst.sort(function (a, b) {
+      return Number(a.numero_cuota != null ? a.numero_cuota : a.sequence) -
+        Number(b.numero_cuota != null ? b.numero_cuota : b.sequence);
+    });
+    rawInst.forEach(function (row) {
+      var inst = installmentOut_(row);
       if (inst.estado === 'pagada') return;
       if (!inst.fecha_vencimiento || String(inst.fecha_vencimiento) > untilStr) return;
-      var client = getClientById_(s.cliente_id);
+      var client = clientById[s.cliente_id];
       upcoming.push({
         venta_id: s.id,
         cliente_nombre: client ? (client.nombre || client.name) : '',

@@ -152,3 +152,51 @@ td {
   color: #ff7b7b;
   margin-top: 0.5rem;
 }
+
+.kys-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 20, 25, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.kys-loading[hidden] {
+  display: none !important;
+}
+
+.kys-loading__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--card);
+  border: 1px solid #2a3545;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.kys-spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid #2a3545;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: kys-spin 0.75s linear infinite;
+}
+
+@keyframes kys-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+body.kys-busy {
+  cursor: wait;
+}
