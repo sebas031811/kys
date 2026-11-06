@@ -41,11 +41,6 @@ async function loadConfig() {
   return configPromise;
 }
 
-async function useSupabase() {
-  const cfg = await loadConfig();
-  return Boolean(cfg);
-}
-
 async function dispatchSupabase(path, options = {}, cfg) {
   const method = (options.method || "GET").toUpperCase();
   let body = null;
@@ -138,8 +133,4 @@ export async function api(path, options = {}) {
 
 export function clearSession() {
   sessionStorage.removeItem("kys_token");
-}
-
-export async function apiBackend() {
-  return (await useSupabase()) ? "supabase" : "gas";
 }

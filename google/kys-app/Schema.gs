@@ -33,6 +33,7 @@ var KYS_HEADERS = {
     KYS_FIELDS.CUOTA.fecha_vencimiento,
     KYS_FIELDS.CUOTA.estado,
     KYS_FIELDS.CUOTA.monto_pagado,
+    KYS_FIELDS.CUOTA.fecha_pago,
   ],
   Pagos: [
     KYS_FIELDS.PAGO.id,

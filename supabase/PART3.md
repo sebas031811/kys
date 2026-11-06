@@ -3,7 +3,10 @@
 ## 1. Proyecto Supabase
 
 1. [supabase.com](https://supabase.com) → tu proyecto.
-2. **SQL Editor** → pega y ejecuta [`schema.sql`](schema.sql).
+2. **SQL Editor** → pega y ejecuta [`schema.sql`](schema.sql). Si el proyecto ya existía, añade columnas nuevas cuando haga falta, por ejemplo:
+   ```sql
+   alter table cuotas add column if not exists fecha_pago date;
+   ```
 3. **Project Settings → API**: copia **URL** y **anon key**.
 
 ## 2. Edge Function `kys-api`
@@ -103,8 +106,9 @@ curl -X POST "https://jccpiuvsmgobhljavxov.supabase.co/functions/v1/kys-api" \
 ## 5. Probar
 
 1. Abre [https://kys-blb.pages.dev/#/login](https://kys-blb.pages.dev/#/login)
-2. `admin@kyscred.com` / `admin123`
-3. Panel, ventas, clientes deben responder sin Google Apps Script.
+2. `admin@kyscred.com` / `admin123` (admin)
+3. Vendedores (misma clave `admin123`): `vivi@kyscred.com`, `sebas@kyscred.com`, `karen@kyscred.com`, `otro@kyscred.com`
+4. Panel, ventas, clientes deben responder sin Google Apps Script.
 
 ## 6. Migrar datos del Sheet
 

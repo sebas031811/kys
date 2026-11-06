@@ -75,15 +75,25 @@ function listUsers_(token) {
   return sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.USERS)).map(userOut_);
 }
 
-function seedAdminIfEmpty_() {
-  var sh = getSheet_(KYS_CONFIG.SHEETS.USERS);
-  if (sheetToObjects_(sh).length > 0) return;
-  var u = KYS_FIELDS.USUARIO;
+function ensureUserByEmail_(sh, email, nombreVisible, rol) {
+  var rows = sheetToObjects_(sh);
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].email).toLowerCase() === String(email).toLowerCase()) return;
+  }
   appendObject_(sh, {
-    email: 'admin@kyscred.com',
+    email: email,
     password_hash: hashPassword_('admin123'),
-    nombre_visible: 'Admin',
-    rol: 'admin',
+    nombre_visible: nombreVisible,
+    rol: rol,
     activo: true,
   });
+}
+
+function seedAdminIfEmpty_() {
+  var sh = getSheet_(KYS_CONFIG.SHEETS.USERS);
+  ensureUserByEmail_(sh, 'admin@kyscred.com', 'Admin', 'admin');
+  ensureUserByEmail_(sh, 'vivi@kyscred.com', 'Vivi', 'seller');
+  ensureUserByEmail_(sh, 'sebas@kyscred.com', 'Sebas', 'seller');
+  ensureUserByEmail_(sh, 'karen@kyscred.com', 'Karen', 'seller');
+  ensureUserByEmail_(sh, 'otro@kyscred.com', 'Otro', 'seller');
 }

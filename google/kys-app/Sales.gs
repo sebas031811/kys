@@ -30,6 +30,7 @@ function saleOut_(row, withRelated) {
     cuotas_pagadas: row.cuotas_pagadas != null ? Number(row.cuotas_pagadas) : null,
     observaciones: row.observaciones || null,
     estado_registro: row.estado_registro || row.record_status || 'venta',
+    fecha_ultimo_pago: null,
     cuotas: [],
     cliente: null,
   };
@@ -53,7 +54,16 @@ function listSales_(token, recordStatus) {
     return true;
   });
   rows.sort(function (a, b) { return Number(b.id) - Number(a.id); });
-  return rows.slice(0, 200).map(function (r) { return saleOut_(r, false); });
+  var clientRows = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.CLIENTS));
+  var clientById = indexRowsById_(clientRows);
+  var lastPayBySale = lastPaymentDatesBySale_();
+  return rows.slice(0, 200).map(function (r) {
+    var sale = saleOut_(r, false);
+    var client = clientById[sale.cliente_id];
+    if (client) sale.cliente = clientOut_(client);
+    sale.fecha_ultimo_pago = lastPayBySale[sale.id] || null;
+    return sale;
+  });
 }
 
 function getSale_(token, saleId) {
@@ -63,6 +73,7 @@ function getSale_(token, saleId) {
   var sellerId = row.vendedor_id || row.seller_id;
   if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
   var sale = saleOut_(row, true);
+  sale.fecha_ultimo_pago = lastPaymentDateForSale_(saleId);
   sale.cuentas = listAccounts_();
   return sale;
 }
@@ -175,7 +186,7 @@ function updateSale_(token, saleId, body) {
     var estado = row.estado_registro || row.record_status;
     if (estado === 'venta') {
       var instRows = rebuildInstallmentsForSale_(row);
-      var applied = applyAmountToSchedule_(instRows, collected);
+      var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
       row.valor_abonado = applied.valor_abonado;
       row[KYS_FIELDS.VENTA.valor_abonado] = applied.valor_abonado;
       row.pendiente = Math.round(Math.max(num_(row.total || row.total_charge) - row.valor_abonado, 0) * 100) / 100;
@@ -228,7 +239,7 @@ function confirmSale_(token, saleId, body) {
     }
 
     var instRows = rebuildInstallmentsForSale_(row);
-    var applied = applyAmountToSchedule_(instRows, collected);
+    var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
     row[v.valor_abonado] = applied.valor_abonado;
     row[v.pendiente] = Math.round(Math.max(num_(row[v.total]) - applied.valor_abonado, 0) * 100) / 100;
     row[v.cuotas_pagadas] = countPaidInstallments_(applied.installments);
@@ -264,7 +275,7 @@ function recordPayment_(token, saleId, body) {
     if (!instRows.length) {
       instRows = rebuildInstallmentsForSale_(row);
     }
-    var applied = applyAmountToSchedule_(instRows, total);
+    var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
     var v = KYS_FIELDS.VENTA;
     row[v.valor_abonado] = applied.valor_abonado;
     row[v.pendiente] = Math.round(Math.max(num_(row[v.total] || row.total) - applied.valor_abonado, 0) * 100) / 100;

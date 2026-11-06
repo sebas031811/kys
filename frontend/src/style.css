@@ -25,9 +25,286 @@ a {
 }
 
 #app {
-  max-width: 960px;
+  max-width: 1024px;
   margin: 0 auto;
   padding: 1rem;
+}
+
+.dash-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+a.dash-action {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  border: 1px solid #3a4a61;
+  background: #2a3545;
+  color: var(--text);
+}
+
+a.dash-action:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+a.dash-action--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.card-head h1,
+.card-head h2 {
+  margin: 0;
+}
+
+.card-head button {
+  width: auto;
+  margin: 0;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.account-card {
+  display: block;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #2a3545;
+  background: #121a24;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+.account-card:hover {
+  border-color: var(--accent);
+}
+
+.account-card__name {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.account-card__balance {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.account-card__meta {
+  display: block;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.account-card__link {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.balance-pos {
+  color: var(--ok);
+}
+
+.balance-neg {
+  color: #f07178;
+}
+
+.account-focus .stat {
+  font-size: 1.75rem;
+  margin: 0.25rem 0 1rem;
+}
+
+.account-focus__grid p:last-child {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+}
+
+tr.row-focus {
+  background: rgba(61, 139, 253, 0.08);
+}
+
+tr.row-pay-ok {
+  background: rgba(61, 214, 140, 0.14);
+}
+
+tr.row-pay-ok td:first-child {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+tr.row-pay-late {
+  background: rgba(240, 113, 120, 0.14);
+}
+
+tr.row-pay-late td:first-child {
+  box-shadow: inset 3px 0 0 #f07178;
+}
+
+tr.row-dim {
+  opacity: 0.55;
+}
+
+body.kys-modal-open {
+  overflow: hidden;
+}
+
+.kys-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.kys-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid #2a3545;
+  border-radius: 12px;
+  margin: auto;
+}
+
+.kys-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #2a3545;
+}
+
+.kys-modal__head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.kys-modal__close {
+  width: auto;
+  margin: 0;
+  padding: 0.25rem 0.55rem;
+  font-size: 1.35rem;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid #3a4a61;
+  color: var(--muted);
+}
+
+.kys-modal__body {
+  padding: 1rem 1.1rem 1.25rem;
+  overflow-y: auto;
+}
+
+.kys-modal__body .card {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+
+.kys-modal__body button {
+  width: 100%;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.detail-actions button,
+.detail-actions .dash-action {
+  width: auto;
+  margin: 0;
+}
+
+.actions-cell {
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.sales-filter-links {
+  margin: 0 0 0.75rem;
+}
+
+.sales-vence-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.sales-vence-filter label {
+  flex: 1 1 200px;
+  max-width: 240px;
+  margin: 0;
+}
+
+.sales-vence-filter button {
+  width: auto;
+  margin: 0;
+}
+
+a.sales-vence-clear {
+  align-self: center;
+  font-size: 0.9rem;
+}
+
+p.sales-dia-hint {
+  margin: 0 0 0.75rem;
+}
+
+button.btn-link {
+  display: inline;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+button.btn-link:hover {
+  color: #6eb0ff;
 }
 
 .app-header {
@@ -51,6 +328,34 @@ nav {
 nav a {
   text-decoration: none;
   font-weight: 600;
+}
+
+nav a.nav-active {
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 0.15rem;
+}
+
+.text-ok {
+  color: var(--ok);
+}
+
+.text-warn {
+  color: var(--warn);
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 0.25rem;
+}
+
+.table-scroll table {
+  min-width: 640px;
+}
+
+.table-spaced {
+  margin-top: 1.25rem;
 }
 
 .card {
@@ -136,6 +441,11 @@ td {
   padding: 0.45rem 0.35rem;
   border-bottom: 1px solid #2a3545;
   text-align: left;
+}
+
+td.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .muted {

@@ -62,6 +62,7 @@ var KYS_FIELDS = {
     fecha_vencimiento: 'fecha_vencimiento',
     estado: 'estado',
     monto_pagado: 'monto_pagado',
+    fecha_pago: 'fecha_pago',
   },
   PAGO: {
     id: 'id',
@@ -124,6 +125,7 @@ var KYS_LEGACY_HEADER_MAP_ = {
     due_date: 'fecha_vencimiento',
     status: 'estado',
     amount_paid: 'monto_pagado',
+    paid_at: 'fecha_pago',
   },
   Pagos: {
     sale_id: 'venta_id',

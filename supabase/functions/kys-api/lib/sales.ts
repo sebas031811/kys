@@ -1,6 +1,8 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { computeSalePricing, num } from "./pricing.ts";
 import { userOut } from "./auth.ts";
+import { syncSalePaymentsToCuotas, lastPaymentDatesBySale, lastPaymentDateForSale } from "./installments.ts";
+import { rebuildInstallmentRows } from "./schedule.ts";
 
 function clientOut(row: Record<string, unknown>) {
   return {
@@ -15,6 +17,25 @@ function clientOut(row: Record<string, unknown>) {
   };
 }
 
+function nextUnpaidDue(cuotas: ReturnType<typeof installmentOut>[]) {
+  const unpaid = [...cuotas]
+    .filter((c) => c.estado !== "pagada")
+    .sort((a, b) => a.numero_cuota - b.numero_cuota);
+  const next = unpaid[0];
+  if (!next) {
+    return {
+      proximo_vencimiento: null as string | null,
+      proximo_vencimiento_estado: null as string | null,
+      proximo_vencimiento_numero: null as number | null,
+    };
+  }
+  return {
+    proximo_vencimiento: next.fecha_vencimiento ? String(next.fecha_vencimiento) : null,
+    proximo_vencimiento_estado: next.estado,
+    proximo_vencimiento_numero: next.numero_cuota,
+  };
+}
+
 function installmentOut(row: Record<string, unknown>) {
   const st = String(row.estado ?? "pendiente");
   let estado = "pendiente";
@@ -25,6 +46,7 @@ function installmentOut(row: Record<string, unknown>) {
     numero_cuota: Number(row.numero_cuota),
     monto: num(row.monto),
     fecha_vencimiento: row.fecha_vencimiento ?? null,
+    fecha_pago: row.fecha_pago ?? null,
     estado,
     monto_pagado: num(row.monto_pagado),
   };
@@ -59,18 +81,62 @@ export function saleOut(row: Record<string, unknown>, cliente: Record<string, un
     cuotas_pagadas: row.cuotas_pagadas != null ? Number(row.cuotas_pagadas) : null,
     observaciones: row.observaciones ?? null,
     estado_registro: row.estado_registro ?? "venta",
+    fecha_ultimo_pago: null as string | null,
     cuotas,
     cliente: cliente ? clientOut(cliente) : null,
   };
 }
 
+function clientFromJoin(row: Record<string, unknown>) {
+  const c = row.clientes as Record<string, unknown> | null;
+  if (!c || typeof c !== "object") return null;
+  return {
+    id: Number(c.id),
+    nombre: c.nombre,
+    telefono: c.telefono ?? null,
+    identificacion: c.identificacion ?? null,
+    email: c.email ?? null,
+    direccion: c.direccion ?? null,
+    texto_cliente: c.texto_cliente ?? null,
+    notas: c.notas ?? null,
+  };
+}
+
 export async function listSales(db: SupabaseClient, me: ReturnType<typeof userOut>, estado: string | null) {
-  let q = db.from("ventas").select("*").order("id", { ascending: false }).limit(200);
+  let q = db
+    .from("ventas")
+    .select("*, clientes(id, nombre, telefono, identificacion, email, direccion, texto_cliente, notas)")
+    .order("id", { ascending: false })
+    .limit(200);
   if (estado) q = q.eq("estado_registro", estado);
   if (me.rol === "seller") q = q.eq("vendedor_id", me.id);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => saleOut(r, null, []));
+  const rows = data ?? [];
+  const ids = rows.map((r) => r.id);
+  let lastBySale: Record<number, string> = {};
+  const cuotasBySale: Record<number, ReturnType<typeof installmentOut>[]> = {};
+  if (ids.length) {
+    const [{ data: pagos }, { data: cuotasRows }] = await Promise.all([
+      db.from("pagos").select("venta_id, fecha_pago").in("venta_id", ids),
+      db.from("cuotas").select("*").in("venta_id", ids).order("numero_cuota"),
+    ]);
+    lastBySale = lastPaymentDatesBySale(pagos ?? []);
+    for (const row of cuotasRows ?? []) {
+      const vid = Number(row.venta_id);
+      if (!cuotasBySale[vid]) cuotasBySale[vid] = [];
+      cuotasBySale[vid].push(installmentOut(row));
+    }
+  }
+  return rows.map((r) => {
+    const cliente = clientFromJoin(r);
+    const { clientes: _c, ...venta } = r as Record<string, unknown> & { clientes?: unknown };
+    const cuotas = cuotasBySale[Number(r.id)] ?? [];
+    const sale = saleOut(venta, cliente, cuotas);
+    sale.fecha_ultimo_pago = lastBySale[sale.id] ?? null;
+    Object.assign(sale, nextUnpaidDue(cuotas));
+    return sale;
+  });
 }
 
 export async function getSale(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number) {
@@ -86,6 +152,7 @@ export async function getSale(db: SupabaseClient, me: ReturnType<typeof userOut>
   if (sale.cuotas_pagadas == null) {
     sale.cuotas_pagadas = cuotas.filter((c) => c.estado === "pagada").length;
   }
+  sale.fecha_ultimo_pago = await lastPaymentDateForSale(db, saleId);
   return { ...sale, cuentas: (cuentas ?? []).map((a) => ({ id: Number(a.id), nombre: a.nombre, tipo_cuenta: a.tipo_cuenta, saldo_inicial: num(a.saldo_inicial), notas: a.notas ?? null })) };
 }
 
@@ -123,30 +190,8 @@ function ventaPayload(body: Record<string, unknown>, me: ReturnType<typeof userO
 
 async function rebuildCuotas(db: SupabaseClient, sale: Record<string, unknown>) {
   await db.from("cuotas").delete().eq("venta_id", sale.id);
-  const rows: Record<string, unknown>[] = [];
-  const inicial = num(sale.inicial);
-  if (inicial > 0) {
-    rows.push({
-      venta_id: sale.id,
-      numero_cuota: 0,
-      monto: inicial,
-      fecha_vencimiento: sale.fecha_venta ?? new Date().toISOString().slice(0, 10),
-      estado: "pendiente",
-      monto_pagado: 0,
-    });
-  }
-  const n = Number(sale.num_cuotas) || 1;
-  const cuota = num(sale.cuota);
-  for (let i = 1; i <= n; i++) {
-    rows.push({
-      venta_id: sale.id,
-      numero_cuota: i,
-      monto: cuota,
-      fecha_vencimiento: null,
-      estado: "pendiente",
-      monto_pagado: 0,
-    });
-  }
+  const built = rebuildInstallmentRows(sale);
+  const rows = built.map((row) => ({ venta_id: sale.id, ...row }));
   if (rows.length) await db.from("cuotas").insert(rows);
 }
 
@@ -195,7 +240,10 @@ export async function patchSale(db: SupabaseClient, me: ReturnType<typeof userOu
   if (error) throw new Error(error.message);
   if (row.estado_registro === "venta") {
     const { data: updated } = await db.from("ventas").select("*").eq("id", saleId).single();
-    if (updated) await rebuildCuotas(db, updated);
+    if (updated) {
+      await rebuildCuotas(db, updated);
+      await syncSalePaymentsToCuotas(db, saleId, num(updated.total));
+    }
   }
   return getSale(db, me, saleId);
 }
@@ -251,9 +299,14 @@ export async function sellerDashboard(db: SupabaseClient, me: ReturnType<typeof 
 }
 
 export async function recordPayment(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number, body: Record<string, unknown>) {
-  const sale = await getSale(db, me, saleId);
-  if (sale.estado_registro === "cotizacion") throw new Error("Convierte la cotización en venta antes de registrar cobros");
-  await db.from("pagos").insert({
+  const { data: ventaRow, error: ve } = await db.from("ventas").select("*").eq("id", saleId).maybeSingle();
+  if (ve || !ventaRow) throw new Error("Venta no encontrada");
+  if (me.rol === "seller" && Number(ventaRow.vendedor_id) !== me.id) throw new Error("Acceso denegado");
+  if (ventaRow.estado_registro === "cotizacion") {
+    throw new Error("Convierte la cotización en venta antes de registrar cobros");
+  }
+
+  const { data: inserted, error: pe } = await db.from("pagos").insert({
     venta_id: saleId,
     cuota_id: body.cuota_id ?? null,
     cuenta_cobro_id: body.cuenta_cobro_id ?? null,
@@ -261,12 +314,22 @@ export async function recordPayment(db: SupabaseClient, me: ReturnType<typeof us
     monto: body.monto,
     fecha_pago: body.fecha_pago ?? new Date().toISOString().slice(0, 10),
     notas: body.notas ?? null,
-  });
-  const { data: pagos } = await db.from("pagos").select("monto").eq("venta_id", saleId);
-  const total = (pagos ?? []).reduce((s, p) => s + num(p.monto), 0);
-  const pendiente = Math.max(num(sale.total) - total, 0);
-  await db.from("ventas").update({ valor_abonado: total, pendiente }).eq("id", saleId);
-  return { id: 0, monto: num(body.monto), fecha_pago: body.fecha_pago, cuenta_cobro_id: body.cuenta_cobro_id ?? null, cuota_id: null, notas: body.notas ?? null };
+  }).select("id").single();
+  if (pe) throw new Error(pe.message);
+
+  const { count } = await db.from("cuotas").select("id", { count: "exact", head: true }).eq("venta_id", saleId);
+  if (!count) await rebuildCuotas(db, ventaRow);
+
+  await syncSalePaymentsToCuotas(db, saleId, num(ventaRow.total));
+
+  return {
+    id: inserted ? Number(inserted.id) : 0,
+    monto: num(body.monto),
+    fecha_pago: body.fecha_pago,
+    cuenta_cobro_id: body.cuenta_cobro_id ?? null,
+    cuota_id: body.cuota_id ?? null,
+    notas: body.notas ?? null,
+  };
 }
 
 export async function confirmSale(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number, body: Record<string, unknown>) {
@@ -293,9 +356,7 @@ export async function confirmSale(db: SupabaseClient, me: ReturnType<typeof user
   const { data: updated } = await db.from("ventas").select("*").eq("id", saleId).single();
   if (updated) {
     await rebuildCuotas(db, updated);
-    const { data: pagos } = await db.from("pagos").select("monto").eq("venta_id", saleId);
-    const total = (pagos ?? []).reduce((s, p) => s + num(p.monto), 0);
-    await db.from("ventas").update({ valor_abonado: total, pendiente: Math.max(num(updated.total) - total, 0) }).eq("id", saleId);
+    await syncSalePaymentsToCuotas(db, saleId, num(updated.total));
   }
   return getSale(db, me, saleId);
 }
