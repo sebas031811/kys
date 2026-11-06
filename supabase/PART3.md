@@ -75,7 +75,9 @@ También sirve `VITE_SUPABASE_ANON_KEY` (JWT anon) en lugar de publishable.
 
 **Project ref** (para `supabase link`): `jccpiuvsmgobhljavxov`
 
-Redeploy Pages tras guardar.
+Redeploy Pages tras guardar (obligatorio: Vite solo embebe variables **en el build**).
+
+Si el login sigue pidiendo Google Apps Script, el último deploy se hizo **sin** variables en **Production** o con nombres `NEXT_PUBLIC_*` sin `VITE_*`. El script `write-pages-config.mjs` acepta ambos prefijos en el build de Cloudflare. En el dashboard: **Deployments → Retry deployment**.
 
 ## 4. CORS
 

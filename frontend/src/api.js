@@ -1,20 +1,52 @@
 import { startLoading, stopLoading } from "./loading.js";
 
-const SUPABASE_URL = (
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_URL
-)?.replace(/\/$/, "");
-const SUPABASE_ANON =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-const SUPABASE_FN = import.meta.env.VITE_SUPABASE_FUNCTION || "kys-api";
+let resolvedConfig = null;
+let configPromise = null;
 
-function useSupabase() {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON);
+function configFromEnv() {
+  const supabaseUrl = (
+    import.meta.env.VITE_SUPABASE_URL ||
+    import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_URL
+  )?.replace(/\/$/, "");
+  const supabaseKey =
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    import.meta.env.VITE_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const functionName = import.meta.env.VITE_SUPABASE_FUNCTION || "kys-api";
+  if (!supabaseUrl || !supabaseKey) return null;
+  return { supabaseUrl, supabaseKey, functionName };
 }
 
-async function dispatchSupabase(path, options = {}) {
+async function loadConfig() {
+  if (resolvedConfig) return resolvedConfig;
+  const fromEnv = configFromEnv();
+  if (fromEnv) {
+    resolvedConfig = fromEnv;
+    return resolvedConfig;
+  }
+  if (!configPromise) {
+    configPromise = fetch(`${import.meta.env.BASE_URL}config.json`)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((file) => {
+        const supabaseUrl = String(file.supabaseUrl || "").replace(/\/$/, "");
+        const supabaseKey = String(file.supabaseKey || "");
+        const functionName = file.functionName || "kys-api";
+        if (supabaseUrl && supabaseKey) {
+          resolvedConfig = { supabaseUrl, supabaseKey, functionName };
+        }
+        return resolvedConfig;
+      })
+      .catch(() => null);
+  }
+  return configPromise;
+}
+
+async function useSupabase() {
+  const cfg = await loadConfig();
+  return Boolean(cfg);
+}
+
+async function dispatchSupabase(path, options = {}, cfg) {
   const method = (options.method || "GET").toUpperCase();
   let body = null;
   if (options.body) {
@@ -22,11 +54,11 @@ async function dispatchSupabase(path, options = {}) {
   }
   const token = sessionStorage.getItem("kys_token") || "";
 
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/${SUPABASE_FN}`, {
+  const res = await fetch(`${cfg.supabaseUrl}/functions/v1/${cfg.functionName}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_ANON}`,
+      Authorization: `Bearer ${cfg.supabaseKey}`,
     },
     body: JSON.stringify({ method, path, body, token }),
   });
@@ -61,7 +93,7 @@ async function dispatchSupabase(path, options = {}) {
 async function dispatchGas(path, options = {}) {
   if (typeof google === "undefined" || !google.script?.run) {
     throw new Error(
-      "Configura VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY (o VITE_SUPABASE_ANON_KEY) en Cloudflare Pages, o abre KYS desde la app web de Google Apps Script.",
+      "Configura VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY en Cloudflare Pages (Production) y redeploy, o abre KYS desde Google Apps Script.",
     );
   }
 
@@ -97,7 +129,8 @@ async function dispatchGas(path, options = {}) {
 export async function api(path, options = {}) {
   startLoading();
   try {
-    return useSupabase() ? await dispatchSupabase(path, options) : await dispatchGas(path, options);
+    const cfg = await loadConfig();
+    return cfg ? await dispatchSupabase(path, options, cfg) : await dispatchGas(path, options);
   } finally {
     stopLoading();
   }
@@ -107,6 +140,6 @@ export function clearSession() {
   sessionStorage.removeItem("kys_token");
 }
 
-export function apiBackend() {
-  return useSupabase() ? "supabase" : "gas";
+export async function apiBackend() {
+  return (await useSupabase()) ? "supabase" : "gas";
 }

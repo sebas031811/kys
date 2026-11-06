@@ -8,6 +8,7 @@ google/kys-app/.clasp.json
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+frontend/public/config.json
 supabase/.temp/
 *.xlsx
 *.pptx
