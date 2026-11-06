@@ -126,4 +126,3 @@ Lo que sí aplica de ese asistente:
 | `.env.local` con `VITE_SUPABASE_URL` + publishable key | [`frontend/.env.local`](../frontend/.env.local) (gitignored) |
 | `App.vue` + `select()` a Postgres | **No** — ignóralo |
 
-Agent Skills (`npx skills add supabase/agent-skills`) es opcional; no cambia el flujo anterior.
