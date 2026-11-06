@@ -34,21 +34,35 @@ function pickEnv(...keys) {
   return "";
 }
 
+const configPath = path.join(publicDir, "config.json");
+let committed = {};
+if (existsSync(configPath)) {
+  try {
+    committed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch {
+    committed = {};
+  }
+}
+
 const config = {
-  supabaseUrl: pickEnv("VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
-  supabaseKey: pickEnv(
-    "VITE_SUPABASE_PUBLISHABLE_KEY",
-    "VITE_SUPABASE_ANON_KEY",
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  ),
-  functionName: pickEnv("VITE_SUPABASE_FUNCTION") || "kys-api",
+  supabaseUrl:
+    pickEnv("VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL") || committed.supabaseUrl || "",
+  supabaseKey:
+    pickEnv(
+      "VITE_SUPABASE_PUBLISHABLE_KEY",
+      "VITE_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ) ||
+    committed.supabaseKey ||
+    "",
+  functionName: pickEnv("VITE_SUPABASE_FUNCTION") || committed.functionName || "kys-api",
 };
 
-writeFileSync(path.join(publicDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
 if (!config.supabaseUrl || !config.supabaseKey) {
   console.warn(
-    "Pages build: faltan variables Supabase (VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY). config.json quedará vacío.",
+    "Pages build: sin URL/clave Supabase (env ni frontend/public/config.json).",
   );
 }
