@@ -21,6 +21,16 @@ Builds the UI and uploads all Apps Script files. Optional: `npm run gas:deploy` 
 
 Las columnas del Sheet y la app usan nombres en español (`valor`, `inicial`, `porcentaje`, `fecha_venta`, …). Si tu hoja tiene encabezados en inglés de una versión anterior, en el Sheet: **KYS → Migrar encabezados (inglés → español)** después de `gas:push`.
 
+## Cloudflare Pages (solo UI)
+
+Build en CI (no usa `embed-gas`; eso es solo para Google):
+
+```bash
+npm ci --prefix frontend && npm run build:pages --prefix frontend
+```
+
+**Directorio de salida:** `frontend/dist` · **Build command** en el dashboard: el comando de arriba (no hace falta `npm ci` en la raíz). La app en Pages aún necesita Supabase (o GAS) para datos; ver `wrangler.toml`.
+
 ## Repo layout
 
 ```

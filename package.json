@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "npm run build --prefix frontend",
+    "build:pages": "npm run build:pages --prefix frontend",
     "gas:login": "node scripts/run-clasp.mjs login",
     "gas:logout": "node scripts/run-clasp.mjs logout",
     "gas:push": "node scripts/gas-push.mjs",
