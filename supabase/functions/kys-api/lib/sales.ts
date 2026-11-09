@@ -1,6 +1,11 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { computeSalePricing, num } from "./pricing.ts";
 import { userOut } from "./auth.ts";
+import {
+  DEFAULT_PORCENTAJE_COMISION,
+  computeCommissionSummary,
+  readComisionPagadaUsuario,
+} from "./commissions.ts";
 import { syncSalePaymentsToCuotas, lastPaymentDatesBySale, lastPaymentDateForSale } from "./installments.ts";
 import { rebuildInstallmentRows } from "./schedule.ts";
 
@@ -66,6 +71,7 @@ export function saleOut(row: Record<string, unknown>, cliente: Record<string, un
     porcentaje: num(row.porcentaje),
     inicial: num(row.inicial),
     ganancia: num(row.ganancia),
+    porcentaje_comision: row.porcentaje_comision != null ? num(row.porcentaje_comision) : DEFAULT_PORCENTAJE_COMISION,
     total: num(row.total),
     num_cuotas: Number(row.num_cuotas) || 1,
     cuota: num(row.cuota),
@@ -76,9 +82,8 @@ export function saleOut(row: Record<string, unknown>, cliente: Record<string, un
     compra: row.compra ?? null,
     tarjeta: row.tarjeta ?? null,
     cuota_tarjeta: row.cuota_tarjeta ?? null,
-    ganancia_vivi: num(row.ganancia_vivi),
-    abonado_vivi: num(row.abonado_vivi),
     cuotas_pagadas: row.cuotas_pagadas != null ? Number(row.cuotas_pagadas) : null,
+    comision_monto: row.comision_monto != null ? num(row.comision_monto) : null,
     observaciones: row.observaciones ?? null,
     estado_registro: row.estado_registro ?? "venta",
     fecha_ultimo_pago: null as string | null,
@@ -170,6 +175,9 @@ function ventaPayload(body: Record<string, unknown>, me: ReturnType<typeof userO
     porcentaje: body.porcentaje,
     inicial: body.inicial ?? 0,
     ganancia: pricing.ganancia,
+    porcentaje_comision: body.porcentaje_comision != null
+      ? num(body.porcentaje_comision)
+      : DEFAULT_PORCENTAJE_COMISION,
     total: pricing.total,
     num_cuotas: body.num_cuotas ?? 1,
     cuota: pricing.cuota,
@@ -180,9 +188,10 @@ function ventaPayload(body: Record<string, unknown>, me: ReturnType<typeof userO
     compra: body.compra ?? null,
     tarjeta: body.tarjeta ?? null,
     cuota_tarjeta: body.cuota_tarjeta ?? null,
-    ganancia_vivi: body.ganancia_vivi ?? 0,
-    abonado_vivi: body.abonado_vivi ?? 0,
     cuotas_pagadas: 0,
+    comision_monto: body.comision_monto != null && body.comision_monto !== ""
+      ? num(body.comision_monto)
+      : null,
     observaciones: body.observaciones ?? null,
     estado_registro: isQuote ? "cotizacion" : "venta",
   };
@@ -209,7 +218,8 @@ export async function createSale(db: SupabaseClient, me: ReturnType<typeof userO
 const VENTA_KEYS = new Set([
   "cliente_id", "vendedor_id", "cuenta_compra_id", "producto", "fecha_venta", "fecha_cotizacion",
   "fecha_entrega", "valor", "porcentaje", "inicial", "num_cuotas", "periodo_pago", "fecha_cuota",
-  "compra", "tarjeta", "cuota_tarjeta", "ganancia_vivi", "abonado_vivi", "observaciones", "estado_registro", "cuota",
+  "compra", "tarjeta", "cuota_tarjeta", "porcentaje_comision", "comision_monto",
+  "observaciones", "estado_registro", "cuota",
 ]);
 
 export async function patchSale(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number, body: Record<string, unknown>) {
@@ -248,9 +258,20 @@ export async function patchSale(db: SupabaseClient, me: ReturnType<typeof userOu
   return getSale(db, me, saleId);
 }
 
-export async function sellerDashboard(db: SupabaseClient, me: ReturnType<typeof userOut>) {
-  let vq = db.from("ventas").select("*").eq("estado_registro", "venta");
-  if (me.rol === "seller") vq = vq.eq("vendedor_id", me.id);
+export async function sellerDashboard(
+  db: SupabaseClient,
+  me: ReturnType<typeof userOut>,
+  vendedorId: number | null = null,
+) {
+  let targetId = me.id;
+  if (vendedorId != null) {
+    if (me.rol !== "admin" && vendedorId !== me.id) throw new Error("Acceso denegado");
+    targetId = vendedorId;
+  }
+
+  const { data: vendedorRow } = await db.from("usuarios").select("*").eq("id", targetId).maybeSingle();
+
+  let vq = db.from("ventas").select("*").eq("estado_registro", "venta").eq("vendedor_id", targetId);
   const { data: sales } = await vq;
   const list = sales ?? [];
   let total_recuperado = 0;
@@ -288,13 +309,18 @@ export async function sellerDashboard(db: SupabaseClient, me: ReturnType<typeof 
   });
   proximas_cuotas.sort((a, b) => String(a.fecha_vencimiento).localeCompare(String(b.fecha_vencimiento)));
 
+  const comisionPagada = await readComisionPagadaUsuario(db, targetId);
+  const comision = computeCommissionSummary(list, comisionPagada);
+
   return {
-    vendedor_id: me.id,
-    nombre_vendedor: me.nombre_visible,
+    vendedor_id: targetId,
+    nombre_vendedor: vendedorRow?.nombre_visible ?? me.nombre_visible,
+    valor_pagado: comisionPagada,
     total_recuperado,
     total_pendiente,
     num_ventas: list.length,
     proximas_cuotas: proximas_cuotas.slice(0, 50),
+    comision,
   };
 }
 

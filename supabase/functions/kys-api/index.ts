@@ -1,4 +1,4 @@
-import { adminClient, authLogin, authMe, destroySession, requireUser } from "./lib/auth.ts";
+import { adminClient, authLogin, authMe, destroySession, requireUser, userOut } from "./lib/auth.ts";
 import { listClients, createClient, parseClientRequest } from "./lib/clients.ts";
 import { listAccounts, createAccount, updateAccount, listAccountsSummary } from "./lib/accounts.ts";
 import { computeSalePricing } from "./lib/pricing.ts";
@@ -11,6 +11,7 @@ import {
   recordPayment,
   confirmSale,
 } from "./lib/sales.ts";
+import { vendedorComisionResumen, recordPagoComisionVendedor } from "./lib/commissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,13 +53,21 @@ async function routeApi(method: string, path: string, body: Record<string, unkno
     const me = await requireUser(db, token);
     if (me.rol !== "admin") throw new Error("Solo administrador");
     const { data } = await db.from("usuarios").select("*");
-    return (data ?? []).map((row) => ({
-      id: Number(row.id),
-      email: row.email,
-      nombre_visible: row.nombre_visible,
-      rol: row.rol,
-      activo: row.activo !== false,
-    }));
+    return (data ?? []).map((row) => userOut(row));
+  }
+
+  const comisionMatch = path.match(/^\/api\/vendedores\/(\d+)\/comision$/);
+  if (comisionMatch && method === "GET") {
+    const me = await requireUser(db, token);
+    const vendedorId = Number(comisionMatch[1]);
+    if (me.rol !== "admin" && me.id !== vendedorId) throw new Error("Acceso denegado");
+    return vendedorComisionResumen(db, vendedorId);
+  }
+
+  const pagoComisionMatch = path.match(/^\/api\/vendedores\/(\d+)\/pagos-comision$/);
+  if (pagoComisionMatch && method === "POST") {
+    const me = await requireUser(db, token);
+    return recordPagoComisionVendedor(db, me, Number(pagoComisionMatch[1]), body ?? {});
   }
 
   if (method === "GET" && path === "/api/clients") {
@@ -98,9 +107,11 @@ async function routeApi(method: string, path: string, body: Record<string, unkno
     return computeSalePricing(body ?? {});
   }
 
-  if (method === "GET" && path === "/api/sales/dashboard/seller") {
+  if (method === "GET" && (path === "/api/sales/dashboard/seller" || path.startsWith("/api/sales/dashboard/seller?"))) {
     const me = await requireUser(db, token);
-    return sellerDashboard(db, me);
+    const q = parseQuery(path);
+    const vendedorId = q.vendedor_id ? Number(q.vendedor_id) : null;
+    return sellerDashboard(db, me, vendedorId);
   }
 
   if (method === "GET" && (path === "/api/sales" || path.startsWith("/api/sales?"))) {

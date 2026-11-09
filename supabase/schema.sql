@@ -8,7 +8,8 @@ create table if not exists usuarios (
   password_hash text not null,
   nombre_visible text not null,
   rol text not null default 'seller' check (rol in ('admin', 'seller')),
-  activo boolean not null default true
+  activo boolean not null default true,
+  comision_pagada numeric not null default 0
 );
 
 create table if not exists sesiones (
@@ -49,6 +50,7 @@ create table if not exists ventas (
   porcentaje numeric not null default 0,
   inicial numeric not null default 0,
   ganancia numeric not null default 0,
+  porcentaje_comision numeric not null default 30,
   total numeric not null default 0,
   num_cuotas int not null default 1,
   cuota numeric not null default 0,
@@ -59,12 +61,16 @@ create table if not exists ventas (
   compra text,
   tarjeta text,
   cuota_tarjeta text,
-  ganancia_vivi numeric default 0,
-  abonado_vivi numeric default 0,
   cuotas_pagadas numeric default 0,
+  comision_monto numeric,
+  clave_importacion text,
   observaciones text,
   estado_registro text not null default 'venta' check (estado_registro in ('venta', 'cotizacion'))
 );
+
+create unique index if not exists idx_ventas_clave_importacion
+  on ventas (clave_importacion)
+  where clave_importacion is not null;
 
 create table if not exists cuotas (
   id bigserial primary key,
@@ -88,6 +94,16 @@ create table if not exists pagos (
   notas text
 );
 
+create table if not exists pagos_comision_vendedor (
+  id bigserial primary key,
+  vendedor_id bigint not null references usuarios (id) on delete cascade,
+  monto numeric not null,
+  fecha_pago date,
+  notas text,
+  registrado_por_id bigint references usuarios (id)
+);
+
+create index if not exists idx_pagos_comision_vendedor on pagos_comision_vendedor (vendedor_id);
 create index if not exists idx_cuotas_venta on cuotas (venta_id);
 create index if not exists idx_pagos_venta on pagos (venta_id);
 create index if not exists idx_ventas_estado on ventas (estado_registro);

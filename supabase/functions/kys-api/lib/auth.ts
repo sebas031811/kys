@@ -15,12 +15,16 @@ export function adminClient(): SupabaseClient {
 }
 
 export function userOut(row: Record<string, unknown>) {
+  const rol = String(row.rol ?? "seller");
   return {
     id: Number(row.id),
     email: row.email,
     nombre_visible: row.nombre_visible,
-    rol: row.rol,
+    rol,
+    es_admin: rol === "admin",
+    es_vendedor: rol === "seller",
     activo: row.activo !== false,
+    valor_pagado: row.comision_pagada != null ? Number(row.comision_pagada) : 0,
   };
 }
 

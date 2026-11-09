@@ -24,6 +24,12 @@ function statusLabel(s) {
   return s.estado_registro === "cotizacion" ? "Cotización" : "Venta";
 }
 
+function rolLabel(rol) {
+  if (rol === "admin") return "Administrador";
+  if (rol === "seller") return "Vendedor";
+  return rol || "—";
+}
+
 function saleCuotasLine(sale) {
   const ult = formatUltimoPago(sale.fecha_ultimo_pago);
   const ultTxt = ult !== "—" ? ` · Últ. pago: ${ult}` : "";
@@ -59,6 +65,7 @@ function saleDetailSummaryHtml(sale, isQuote) {
     <p class="muted">${escHtml(sale.cliente?.nombre || "")}${sale.cliente?.telefono ? ` · ${escHtml(sale.cliente.telefono)}` : ""}</p>
     <p class="muted">${saleCuotasLine(sale)}</p>
     <p>Abonado ${money(sale.valor_abonado)} · Pendiente ${money(sale.pendiente)} · Total ${money(sale.total)}</p>
+    <p class="muted">Ganancia ${money(sale.ganancia)} · Comisión vendedor ${sale.porcentaje_comision ?? 30}%</p>
     <div class="detail-actions">
       <button type="button" id="editSaleBtn">Editar</button>
       ${isQuote ? "" : `<button type="button" id="paySaleBtn">Registrar cobro</button>`}
@@ -109,17 +116,17 @@ function saleEditFormHtml(sale, accounts, isQuote) {
     ? `<label>Fecha cotización<input id="fechaCotizacion" type="date" value="${sale.fecha_cotizacion || ""}"/></label>`
     : `<label>Fecha venta<input id="fechaVenta" type="date" value="${sale.fecha_venta || ""}"/>
       <label>Fecha entrega<input id="fechaEntrega" type="date" value="${sale.fecha_entrega || ""}"/></label>`;
-  const partnerFields =
+  const adminFields =
     state.user?.rol === "admin"
-      ? `<label>Cuota tarjeta<input id="cuotaTarjeta" value="${escAttr(sale.cuota_tarjeta)}"/></label>
-      <label>Ganancia Vivi<input id="gananciaVivi" type="number" value="${sale.ganancia_vivi || 0}"/></label>
-      <label>Valor abonado Vivi<input id="abonadoVivi" type="number" value="${sale.abonado_vivi || 0}"/></label>`
+      ? `<label>Cuota tarjeta<input id="cuotaTarjeta" value="${escAttr(sale.cuota_tarjeta)}"/></label>`
       : "";
   return `<p class="muted">${escHtml(sale.cliente?.nombre || "")} · Abonado ${money(sale.valor_abonado)} · Pendiente ${money(sale.pendiente)}</p>
     <label>Producto<input id="producto" value="${escAttr(sale.producto)}"/></label>
     <div class="grid2">
       <label>Valor producto<input id="valor" type="number" value="${sale.valor}"/></label>
-      <label>%<input id="porcentaje" type="number" step="0.01" value="${sale.porcentaje}"/></label>
+      <label>% margen venta<input id="porcentaje" type="number" step="0.01" value="${sale.porcentaje}"/></label>
+      <label>% comisión vendedor<input id="porcentajeComision" type="number" step="0.01" value="${sale.porcentaje_comision ?? 30}"/></label>
+      <label>Comisión total ($)<input id="comisionMonto" type="number" step="1" value="${sale.comision_monto ?? ""}" placeholder="Opcional"/></label>
       <label>Inicial<input id="inicial" type="number" value="${sale.inicial}"/></label>
       <label># Cuotas<input id="numCuotas" type="number" value="${sale.num_cuotas}"/></label>
       <label>Periodo de pago<select id="periodoPago">${periodOptions(sale.periodo_pago)}</select></label>
@@ -131,7 +138,7 @@ function saleEditFormHtml(sale, accounts, isQuote) {
     <label>Compra (URL)<input id="compra" value="${escAttr(sale.compra)}"/></label>
     <label>Tarjeta<input id="tarjeta" value="${escAttr(sale.tarjeta)}"/></label>
     <label>Cuenta compra<select id="cuentaCompra"><option value="">—</option>${accountOptions(accounts, sale.cuenta_compra_id)}</select></label>
-    ${partnerFields}
+    ${adminFields}
     <button type="button" id="saveSaleBtn">Guardar cambios</button>
     <p class="error" id="saveErr"></p>`;
 }
@@ -142,6 +149,11 @@ function buildSalePatchBody(root) {
     producto: root.querySelector("#producto").value,
     valor: Number(root.querySelector("#valor").value),
     porcentaje: Number(root.querySelector("#porcentaje").value),
+    porcentaje_comision: Number(root.querySelector("#porcentajeComision")?.value ?? 30),
+    comision_monto:
+      root.querySelector("#comisionMonto")?.value !== ""
+        ? Number(root.querySelector("#comisionMonto").value)
+        : null,
     inicial: Number(root.querySelector("#inicial").value),
     num_cuotas: Number(root.querySelector("#numCuotas").value),
     periodo_pago: root.querySelector("#periodoPago").value,
@@ -159,11 +171,7 @@ function buildSalePatchBody(root) {
   else if (fechaEntrega) body.fecha_entrega = null;
   if (fechaCot?.value) body.fecha_cotizacion = fechaCot.value;
   const cuotaTarjeta = root.querySelector("#cuotaTarjeta");
-  const gananciaVivi = root.querySelector("#gananciaVivi");
-  const abonadoVivi = root.querySelector("#abonadoVivi");
   if (cuotaTarjeta) body.cuota_tarjeta = cuotaTarjeta.value || null;
-  if (gananciaVivi) body.ganancia_vivi = Number(gananciaVivi.value || 0);
-  if (abonadoVivi) body.abonado_vivi = Number(abonadoVivi.value || 0);
   return body;
 }
 
@@ -205,7 +213,8 @@ function nav() {
        ${navLink("#/sales", "Ventas", "sales")}
        ${navLink("#/clients", "Clientes", "clients")}
        ${navLink("#/accounts", "Cuentas", "accounts")}
-       <a href="#" id="logout">Salir (${escHtml(state.user.nombre_visible)})</a>`
+       ${state.user.rol === "admin" ? navLink("#/vendedores", "Vendedores", "vendedores") : ""}
+       <a href="#" id="logout">Salir (${escHtml(state.user.nombre_visible)} · ${escHtml(rolLabel(state.user.rol))})</a>`
     : navLink("#/login", "Entrar", "login");
   return `<header class="app-header"><strong>KYS</strong> <span class="muted">ventas · cuotas · clientes</span></header><nav>${links}</nav>`;
 }
@@ -286,6 +295,19 @@ async function viewDashboard(root) {
     <div class="account-grid">${accountCards}</div></div>`
       : `<div class="card"><h2>Cuentas</h2><p class="muted">Sin cuentas. <a href="#/accounts">Configurar cuentas</a></p></div>`;
 
+  const c = d.comision || {};
+  const comisionSection = `<div class="card"><h2>Comisión de ventas</h2>
+    <p class="muted">El % de comisión se define en cada venta (por defecto 30% sobre la ganancia).</p>
+    <div class="grid2">
+      <div><p class="muted">Ganancia total (ventas)</p><p class="stat">${money(c.ganancia_total_ventas)}</p></div>
+      <div><p class="muted">Comisión si todo estuviera cobrado</p><p class="stat">${money(c.comision_total_ventas)}</p></div>
+      <div><p class="muted">Comisión por recaudos</p><p class="stat text-ok">${money(c.comision_total_recaudo)}</p></div>
+      <div><p class="muted">Ya pagado al vendedor</p><p class="stat">${money(d.valor_pagado ?? c.comision_pagada)}</p></div>
+    </div>
+    <p class="muted">Pendiente de pago (comisión por recaudos − pagado): <strong>${money(c.comision_pendiente_pago)}</strong></p>
+    ${state.user.rol === "admin" ? `<p class="muted"><a href="#/vendedores">Registrar pagos de comisión a vendedores</a></p>` : ""}
+    </div>`;
+
   root.appendChild(
     el(`<div class="card"><h1>Inicio — ${d.nombre_vendedor}</h1>
     <div class="dash-actions">
@@ -297,6 +319,7 @@ async function viewDashboard(root) {
       <div><p class="muted">Pendiente</p><p class="stat text-warn">${money(d.total_pendiente)}</p></div>
     </div>
     <p class="muted">${d.num_ventas} ventas</p></div>
+    ${comisionSection}
     ${accountsSection}
     <div class="card"><h2>Próximas cuotas</h2>
     ${tableScroll(`<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuota</th><th>Valor</th><th></th></tr></thead>
@@ -355,7 +378,11 @@ async function viewSales(root) {
   const colspan = showVenceCol ? 10 : 9;
   const venceHead = showVenceCol ? "<th>Próx. vence</th>" : "";
   root.appendChild(
-    el(`<div class="card"><h1>Ventas y cotizaciones</h1>
+    el(`<div class="card"><div class="card-head"><h1>Ventas y cotizaciones</h1>
+    <div class="dash-actions">
+      <a class="dash-action dash-action--primary" href="#/sales/new">Nueva venta</a>
+      <a class="dash-action" href="#/sales/new?cotizacion=1">Nueva cotización</a>
+    </div></div>
     <p class="sales-filter-links">
       <a href="${salesListHash({ filter: "" })}">Todas</a> ·
       <a href="${salesListHash({ filter: "cotizacion" })}">Cotizaciones</a> ·
@@ -507,7 +534,10 @@ async function viewNewSale(root, startAsQuote = false) {
   ]);
   const clientOpts = clients.map((c) => `<option value="${c.id}">${escHtml(c.nombre)}</option>`).join("");
   const accOpts = accounts.map((a) => `<option value="${a.id}">${escHtml(a.nombre)}</option>`).join("");
-  const sellerOpts = users.map((u) => `<option value="${u.id}">${escHtml(u.nombre_visible)}</option>`).join("");
+  const sellerOpts = users
+    .filter((u) => u.rol === "seller")
+    .map((u) => `<option value="${u.id}">${escHtml(u.nombre_visible)}</option>`)
+    .join("");
   const today = new Date().toISOString().slice(0, 10);
 
   root.appendChild(
@@ -517,7 +547,8 @@ async function viewNewSale(root, startAsQuote = false) {
     <label>Producto<input id="producto" /></label>
     <div class="grid2">
       <label>Valor producto<input id="valor" type="number" /></label>
-      <label>%<input id="porcentaje" type="number" step="0.01" value="0.3" /></label>
+      <label>% margen venta<input id="porcentaje" type="number" step="0.01" value="0.3" /></label>
+      <label>% comisión vendedor<input id="porcentajeComision" type="number" step="0.01" value="30" /></label>
       <label>Inicial<input id="inicial" type="number" value="0" /></label>
       <label># Cuotas<input id="numCuotas" type="number" value="4" /></label>
       <label>Periodo de pago<select id="periodoPago">${periodOptions("Mensual")}</select></label>
@@ -565,6 +596,7 @@ async function viewNewSale(root, startAsQuote = false) {
         producto: root.querySelector("#producto").value,
         valor: Number(root.querySelector("#valor").value),
         porcentaje: Number(root.querySelector("#porcentaje").value),
+        porcentaje_comision: Number(root.querySelector("#porcentajeComision").value || 30),
         inicial: Number(root.querySelector("#inicial").value),
         num_cuotas: Number(root.querySelector("#numCuotas").value),
         periodo_pago: root.querySelector("#periodoPago").value,
@@ -798,6 +830,99 @@ async function viewAccounts(root, focusAccountId) {
   });
 }
 
+async function viewVendedores(root, focusId) {
+  if (state.user.rol !== "admin") {
+    root.appendChild(el(`<p class="error">Solo administrador</p>`));
+    return;
+  }
+
+  const users = await api("/api/auth/users");
+  const sellers = users.filter((u) => u.rol === "seller");
+  const selectedUser = focusId ? users.find((u) => Number(u.id) === Number(focusId)) : sellers[0];
+  const selectedId = selectedUser?.id;
+  const selectedIsSeller = selectedUser?.rol === "seller";
+
+  const listRows = users
+    .map((u) => {
+      const href = u.rol === "seller" ? `#/vendedores/${u.id}` : "#";
+      const nameCell =
+        u.rol === "seller"
+          ? `<a href="${href}">${escHtml(u.nombre_visible)}</a>`
+          : escHtml(u.nombre_visible);
+      return `<tr class="${selectedId === u.id ? "row-focus" : ""}">
+        <td>${nameCell}</td>
+        <td>${escHtml(rolLabel(u.rol))}</td>
+        <td>${escHtml(u.email)}</td>
+        <td>${u.rol === "seller" ? money(u.valor_pagado ?? 0) : "—"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  let detailHtml = `<p class="muted">Selecciona un vendedor (rol Vendedor)</p>`;
+  if (selectedId && selectedIsSeller) {
+    const data = await api(`/api/vendedores/${selectedId}/comision`);
+    const r = data.resumen || {};
+    const pagos = (data.pagos || [])
+      .map(
+        (p) =>
+          `<tr><td>${escHtml(p.fecha_pago || "—")}</td><td>${money(p.monto)}</td><td>${escHtml(p.notas || "")}</td></tr>`,
+      )
+      .join("");
+    detailHtml = `<h2>${escHtml(data.vendedor.nombre_visible)}</h2>
+      <p class="muted">Rol: ${escHtml(rolLabel(data.vendedor.rol))} · Valor pagado (en perfil): <strong>${money(data.vendedor.valor_pagado ?? 0)}</strong></p>
+      <p class="muted">Totales según el % de comisión guardado en cada venta.</p>
+      <div class="grid2">
+        <div><p class="muted">Ganancia total ventas</p><p>${money(r.ganancia_total_ventas)}</p></div>
+        <div><p class="muted">Comisión (ventas completas)</p><p>${money(r.comision_total_ventas)}</p></div>
+        <div><p class="muted">Comisión por recaudos</p><p class="text-ok">${money(r.comision_total_recaudo)}</p></div>
+        <div><p class="muted">Pagado al vendedor</p><p>${money(r.comision_pagada)}</p></div>
+      </div>
+      <p class="muted">Pendiente de pago: <strong>${money(r.comision_pendiente_pago)}</strong></p>
+      <h3>Registrar pago de comisión</h3>
+      <form id="pagoComForm">
+        <label>Monto<input name="monto" type="number" required/></label>
+        <label>Fecha<input name="fecha_pago" type="date"/></label>
+        <label>Notas<input name="notas"/></label>
+        <button type="submit">Registrar pago</button>
+      </form>
+      <h3>Historial de pagos</h3>
+      ${tableScroll(`<table><thead><tr><th>Fecha</th><th>Monto</th><th>Notas</th></tr></thead><tbody>${pagos || "<tr><td colspan=3 class=muted>Sin pagos</td></tr>"}</tbody></table>`)}`;
+  } else if (selectedId && !selectedIsSeller) {
+    detailHtml = `<h2>${escHtml(selectedUser.nombre_visible)}</h2>
+      <p class="muted">Rol: <strong>${escHtml(rolLabel(selectedUser.rol))}</strong>. Los administradores no reciben comisión por ventas.</p>`;
+  }
+
+  root.appendChild(
+    el(`<div class="card"><h1>Usuarios y comisiones</h1>
+      <p class="muted">El rol (<code>admin</code> / <code>seller</code> en la tabla <code>usuarios</code>) define quién es administrador y quién vendedor. El valor pagado se guarda en <code>usuarios.comision_pagada</code> y sube con cada pago registrado.</p>
+      <div class="grid2">
+        <div>${tableScroll(`<table><thead><tr><th>Nombre</th><th>Rol</th><th>Email</th><th>Valor pagado</th></tr></thead><tbody>${listRows || "<tr><td colspan=4 class=muted>Sin usuarios</td></tr>"}</tbody></table>`)}</div>
+        <div class="card" id="vendedor-detail">${detailHtml}</div>
+      </div></div>`),
+  );
+
+  const pagoForm = root.querySelector("#pagoComForm");
+  if (pagoForm && selectedId) {
+    pagoForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(pagoForm);
+      try {
+        await api(`/api/vendedores/${selectedId}/pagos-comision`, {
+          method: "POST",
+          body: JSON.stringify({
+            monto: Number(fd.get("monto")),
+            fecha_pago: fd.get("fecha_pago") || undefined,
+            notas: fd.get("notas") || undefined,
+          }),
+        });
+        render();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+  }
+}
+
 function wireNavLinks(app) {
   app.querySelectorAll("nav a[href^='#']").forEach((a) => {
     a.addEventListener("click", (e) => {
@@ -832,7 +957,9 @@ async function render() {
             ? "clients"
             : route === "accounts"
               ? "accounts"
-              : "dashboard";
+              : route === "vendedores"
+                ? "vendedores"
+                : "dashboard";
 
   closeModal();
   const app = document.getElementById("app");
@@ -869,6 +996,7 @@ async function render() {
     else if (route === "sales" && param) await viewSaleDetail(root, param);
     else if (route === "clients") await viewClients(root);
     else if (route === "accounts") await viewAccounts(root, param);
+    else if (route === "vendedores") await viewVendedores(root, param);
     else await viewDashboard(root);
   } catch (e) {
     root.appendChild(el(`<p class="error">${escHtml(e.message)}</p>`));
