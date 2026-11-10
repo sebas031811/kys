@@ -265,11 +265,10 @@ function confirmSale_(token, saleId, body) {
 
 function deleteSale_(token, saleId) {
   var me = requireUser_(token);
+  if (me.rol !== 'admin') throw new Error('Solo administrador');
   return withDocLock_(function () {
     var row = findById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId);
     if (!row) throw new Error('Venta no encontrada');
-    var sellerId = row.vendedor_id || row.seller_id;
-    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
 
     deleteRowsWhereColumnEquals_(getSheet_(KYS_CONFIG.SHEETS.INSTALLMENTS), KYS_FIELDS.CUOTA.venta_id, saleId);
     deleteRowsWhereColumnEquals_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), KYS_FIELDS.PAGO.venta_id, saleId);
@@ -280,13 +279,12 @@ function deleteSale_(token, saleId) {
 
 function deletePayment_(token, saleId, paymentId) {
   var me = requireUser_(token);
+  if (me.rol !== 'admin') throw new Error('Solo administrador');
   return withDocLock_(function () {
     var row = findById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId);
     if (!row) throw new Error('Venta no encontrada');
     var estado = row.estado_registro || row.record_status;
     if (estado === 'cotizacion') throw new Error('Convierte la cotización en venta antes de eliminar cobros');
-    var sellerId = row.vendedor_id || row.seller_id;
-    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
 
     var payRow = findById_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), paymentId);
     if (!payRow) throw new Error('Cobro no encontrado');

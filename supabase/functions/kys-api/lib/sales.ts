@@ -353,19 +353,8 @@ export async function sellerDashboard(
 
 const PAGO_KEYS = new Set(["monto", "fecha_pago", "cuenta_cobro_id", "notas"]);
 
-async function assertSaleAccess(
-  db: SupabaseClient,
-  me: ReturnType<typeof userOut>,
-  saleId: number,
-) {
-  const { data: row, error } = await db.from("ventas").select("vendedor_id").eq("id", saleId).maybeSingle();
-  if (error || !row) throw new Error("Venta no encontrada");
-  if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
-  return row;
-}
-
 export async function deleteSale(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number) {
-  await assertSaleAccess(db, me, saleId);
+  if (me.rol !== "admin") throw new Error("Solo administrador");
   const { error } = await db.from("ventas").delete().eq("id", saleId);
   if (error) throw new Error(error.message);
   return { ok: true, id: saleId };
@@ -415,6 +404,7 @@ export async function deletePayment(
   saleId: number,
   paymentId: number,
 ) {
+  if (me.rol !== "admin") throw new Error("Solo administrador");
   const { data: ventaRow, error: ve } = await db.from("ventas").select("*").eq("id", saleId).maybeSingle();
   if (ve || !ventaRow) throw new Error("Venta no encontrada");
   if (me.rol === "seller" && Number(ventaRow.vendedor_id) !== me.id) throw new Error("Acceso denegado");

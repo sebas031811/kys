@@ -41,7 +41,7 @@ function nextPaymentAmount(sale) {
   return Math.max(0, (next.monto || 0) - (next.monto_pagado || 0));
 }
 
-function saleDetailSummaryHtml(sale, isQuote) {
+function saleDetailSummaryHtml(sale, isQuote, isAdmin) {
   return `<div class="card">
     <h1>${isQuote ? "Cotización" : "Venta"} #${sale.id}</h1>
     <p><strong>${escHtml(sale.producto || "")}</strong></p>
@@ -53,7 +53,7 @@ function saleDetailSummaryHtml(sale, isQuote) {
       <button type="button" id="editSaleBtn">Editar</button>
       ${isQuote ? "" : `<button type="button" id="paySaleBtn">Registrar cobro</button>`}
       ${isQuote ? `<button type="button" class="secondary" id="printBtn">Imprimir cotización</button>` : ""}
-      <button type="button" class="secondary" id="deleteSaleBtn">Eliminar</button>
+      ${isAdmin ? `<button type="button" class="secondary" id="deleteSaleBtn">Eliminar</button>` : ""}
     </div>
   </div>`;
 }
@@ -68,7 +68,7 @@ function payFormHtml(sale, accOpts, today) {
     <p class="error" id="payErr"></p>`;
 }
 
-function payEditFormHtml(payment, accounts) {
+function payEditFormHtml(payment, accounts, isAdmin) {
   const fecha = payment.fecha_pago ? String(payment.fecha_pago).slice(0, 10) : "";
   return `<p class="muted">Cobro #${payment.id}</p>
     <label>Valor<input id="payAmount" type="number" value="${Number(payment.monto) || 0}"/></label>
@@ -76,12 +76,12 @@ function payEditFormHtml(payment, accounts) {
     <label>Cuenta cobro<select id="payAccount"><option value="">—</option>${accountOptions(accounts, payment.cuenta_cobro_id)}</select></label>
     <label>Notas<input id="payNotes" value="${escAttr(payment.notas || "")}"/></label>
     <button type="button" id="paySaveBtn">Guardar abono</button>
-    <button type="button" class="secondary" id="payDeleteBtn">Eliminar abono</button>
+    ${isAdmin ? `<button type="button" class="secondary" id="payDeleteBtn">Eliminar abono</button>` : ""}
     <p class="error" id="payErr"></p>`;
 }
 
-function openPaymentEditModal(saleId, payment, accounts) {
-  openModal(`Editar abono #${payment.id} — venta #${saleId}`, payEditFormHtml(payment, accounts));
+function openPaymentEditModal(saleId, payment, accounts, isAdmin) {
+  openModal(`Editar abono #${payment.id} — venta #${saleId}`, payEditFormHtml(payment, accounts, isAdmin));
   const body = modalBody();
   body.querySelector("#paySaveBtn").onclick = async () => {
     try {
@@ -344,6 +344,7 @@ export async function viewSales(root) {
 }
 
 export async function viewSaleDetail(root, id) {
+  const isAdmin = state.user?.rol === "admin";
   const sale = await api(`/api/sales/${id}`);
   const accounts = sale.cuentas || (await getCuentas(api));
   const instRows = [...(sale.cuotas || [])]
@@ -385,22 +386,32 @@ export async function viewSaleDetail(root, id) {
       <th class="th-sortable" data-sort="abonado" data-sort-type="number" tabindex="0" role="button">Abonado</th>
     </tr></thead><tbody>${instRows}</tbody></table>`)}</div>`;
 
+  const payActionBtns = (payId) => {
+    const edit = `<button type="button" class="secondary edit-pay-btn" data-pay-id="${payId}">Editar</button>`;
+    const del = isAdmin
+      ? ` <button type="button" class="secondary delete-pay-btn" data-pay-id="${payId}">Eliminar</button>`
+      : "";
+    return edit + del;
+  };
   const payRows = [...(sale.pagos || [])]
     .map(
       (p) =>
-        `<tr data-pay-id="${p.id}"><td>${p.fecha_pago || "—"}</td><td class="num">${money(p.monto)}</td><td>${escHtml(accounts.find((a) => a.id === p.cuenta_cobro_id)?.nombre || "—")}</td><td>${escHtml(p.notas || "")}</td><td class="actions-cell"><button type="button" class="secondary edit-pay-btn" data-pay-id="${p.id}">Editar</button> <button type="button" class="secondary delete-pay-btn" data-pay-id="${p.id}">Eliminar</button></td></tr>`,
+        `<tr data-pay-id="${p.id}"><td>${p.fecha_pago || "—"}</td><td class="num">${money(p.monto)}</td><td>${escHtml(accounts.find((a) => a.id === p.cuenta_cobro_id)?.nombre || "—")}</td><td>${escHtml(p.notas || "")}</td><td class="actions-cell">${payActionBtns(p.id)}</td></tr>`,
     )
     .join("");
+  const paymentsHint = isAdmin
+    ? "Al editar o eliminar un abono se recalculan cuotas, abonado y pendiente de la venta."
+    : "Al editar un abono se recalculan cuotas, abonado y pendiente de la venta. Solo el administrador puede eliminar cobros.";
   const paymentsBlock = isQuote
     ? ""
     : `<div class="card"><h2>Abonos registrados</h2>
-    <p class="muted">Al editar o eliminar un abono se recalculan cuotas, abonado y pendiente de la venta.</p>
+    <p class="muted">${paymentsHint}</p>
     ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Valor</th><th>Cuenta cobro</th><th>Notas</th><th></th></tr></thead>
     <tbody>${payRows || "<tr><td colspan=5 class=muted>Sin abonos</td></tr>"}</tbody></table>`)}</div>`;
 
   root.appendChild(
     el(`<div>
-    ${saleDetailSummaryHtml(sale, isQuote)}
+    ${saleDetailSummaryHtml(sale, isQuote, isAdmin)}
     ${convertBlock}
     ${paymentsBlock}
     ${installmentsBlock}
@@ -410,7 +421,7 @@ export async function viewSaleDetail(root, id) {
   root.querySelectorAll(".edit-pay-btn").forEach((btn) => {
     const payId = Number(btn.dataset.payId);
     const payment = (sale.pagos || []).find((p) => Number(p.id) === payId);
-    if (payment) btn.onclick = () => openPaymentEditModal(id, payment, accounts);
+    if (payment) btn.onclick = () => openPaymentEditModal(id, payment, accounts, isAdmin);
   });
 
   root.querySelectorAll(".delete-pay-btn").forEach((btn) => {
