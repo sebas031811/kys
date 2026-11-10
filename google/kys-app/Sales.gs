@@ -15,6 +15,9 @@ function saleOut_(row, withRelated) {
     porcentaje: num_(row.porcentaje != null ? row.porcentaje : row.margin_rate),
     inicial: num_(row.inicial != null ? row.inicial : row.down_payment),
     ganancia: num_(row.ganancia != null ? row.ganancia : row.profit),
+    porcentaje_comision: row.porcentaje_comision != null && row.porcentaje_comision !== ''
+      ? num_(row.porcentaje_comision)
+      : 30,
     total: num_(row.total != null ? row.total : row.total_charge),
     num_cuotas: Number(row.num_cuotas != null ? row.num_cuotas : row.installment_count) || 1,
     cuota: num_(row.cuota != null ? row.cuota : row.installment_amount),
@@ -25,8 +28,6 @@ function saleOut_(row, withRelated) {
     compra: row.compra || row.purchase_url || null,
     tarjeta: row.tarjeta || row.card_installment_note || null,
     cuota_tarjeta: row.cuota_tarjeta || null,
-    ganancia_vivi: num_(row.ganancia_vivi),
-    abonado_vivi: num_(row.abonado_vivi),
     cuotas_pagadas: row.cuotas_pagadas != null ? Number(row.cuotas_pagadas) : null,
     observaciones: row.observaciones || null,
     estado_registro: row.estado_registro || row.record_status || 'venta',
@@ -74,8 +75,21 @@ function getSale_(token, saleId) {
   if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
   var sale = saleOut_(row, true);
   sale.fecha_ultimo_pago = lastPaymentDateForSale_(saleId);
+  sale.pagos = paymentsForSale_(saleId).map(paymentOut_);
   sale.cuentas = listAccounts_();
   return sale;
+}
+
+function paymentOut_(row) {
+  return {
+    id: Number(row.id),
+    monto: num_(row.monto != null ? row.monto : row.amount),
+    fecha_pago: row.fecha_pago || row.paid_at || null,
+    cuenta_cobro_id: row.cuenta_cobro_id || row.collection_account_id
+      ? Number(row.cuenta_cobro_id || row.collection_account_id)
+      : null,
+    notas: row.notas || row.notes || null,
+  };
 }
 
 function pricingFieldsFromCreate_(body) {
@@ -104,6 +118,7 @@ function ventaRowFromBody_(body, amounts, me, isQuote) {
   row[v.porcentaje] = body.porcentaje != null ? body.porcentaje : body.margin_rate;
   row[v.inicial] = body.inicial != null ? body.inicial : (body.down_payment || 0);
   row[v.ganancia] = amounts.ganancia;
+  row[v.porcentaje_comision] = body.porcentaje_comision != null ? body.porcentaje_comision : 30;
   row[v.total] = amounts.total;
   row[v.num_cuotas] = body.num_cuotas != null ? body.num_cuotas : (body.installment_count || 1);
   row[v.cuota] = amounts.cuota;
@@ -114,8 +129,6 @@ function ventaRowFromBody_(body, amounts, me, isQuote) {
   row[v.compra] = body.compra || body.purchase_url || '';
   row[v.tarjeta] = body.tarjeta || body.card_installment_note || '';
   row[v.cuota_tarjeta] = body.cuota_tarjeta || '';
-  row[v.ganancia_vivi] = body.ganancia_vivi != null ? body.ganancia_vivi : '';
-  row[v.abonado_vivi] = body.abonado_vivi != null ? body.abonado_vivi : '';
   row[v.cuotas_pagadas] = 0;
   row[v.observaciones] = body.observaciones || '';
   row[v.estado_registro] = isQuote ? 'cotizacion' : 'venta';
@@ -139,7 +152,7 @@ function createSale_(token, body) {
 }
 
 function applyPricingToSaleRow_(sale) {
-  var pricing = computeSalePricing_(sale);
+  var pricing = computeSalePricing_(ventaPricingInputFromRow_(sale));
   var v = KYS_FIELDS.VENTA;
   sale[v.ganancia] = pricing.ganancia;
   sale[v.total] = pricing.total;
@@ -242,6 +255,98 @@ function confirmSale_(token, saleId, body) {
     var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
     row[v.valor_abonado] = applied.valor_abonado;
     row[v.pendiente] = Math.round(Math.max(num_(row[v.total]) - applied.valor_abonado, 0) * 100) / 100;
+    row[v.cuotas_pagadas] = countPaidInstallments_(applied.installments);
+    updateById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId, row);
+    saveInstallmentsForSale_(saleId, applied.installments);
+
+    return getSale_(token, saleId);
+  });
+}
+
+function deleteSale_(token, saleId) {
+  var me = requireUser_(token);
+  return withDocLock_(function () {
+    var row = findById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId);
+    if (!row) throw new Error('Venta no encontrada');
+    var sellerId = row.vendedor_id || row.seller_id;
+    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
+
+    deleteRowsWhereColumnEquals_(getSheet_(KYS_CONFIG.SHEETS.INSTALLMENTS), KYS_FIELDS.CUOTA.venta_id, saleId);
+    deleteRowsWhereColumnEquals_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), KYS_FIELDS.PAGO.venta_id, saleId);
+    if (!deleteById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId)) throw new Error('Venta no encontrada');
+    return { ok: true, id: Number(saleId) };
+  });
+}
+
+function deletePayment_(token, saleId, paymentId) {
+  var me = requireUser_(token);
+  return withDocLock_(function () {
+    var row = findById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId);
+    if (!row) throw new Error('Venta no encontrada');
+    var estado = row.estado_registro || row.record_status;
+    if (estado === 'cotizacion') throw new Error('Convierte la cotización en venta antes de eliminar cobros');
+    var sellerId = row.vendedor_id || row.seller_id;
+    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
+
+    var payRow = findById_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), paymentId);
+    if (!payRow) throw new Error('Cobro no encontrado');
+    var paySaleId = payRow.venta_id != null ? payRow.venta_id : payRow.sale_id;
+    if (Number(paySaleId) !== Number(saleId)) throw new Error('Cobro no encontrado');
+
+    if (!deleteById_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), paymentId)) throw new Error('Cobro no encontrado');
+
+    row = applyPricingToSaleRow_(row);
+    var instRows = loadInstallmentsForSale_(saleId);
+    if (!instRows.length) {
+      instRows = rebuildInstallmentsForSale_(row);
+    }
+    var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
+    var v = KYS_FIELDS.VENTA;
+    row[v.valor_abonado] = applied.valor_abonado;
+    row[v.pendiente] = Math.round(Math.max(num_(row[v.total] || row.total) - applied.valor_abonado, 0) * 100) / 100;
+    row[v.cuotas_pagadas] = countPaidInstallments_(applied.installments);
+    updateById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId, row);
+    saveInstallmentsForSale_(saleId, applied.installments);
+
+    return getSale_(token, saleId);
+  });
+}
+
+function updatePayment_(token, saleId, paymentId, body) {
+  var me = requireUser_(token);
+  return withDocLock_(function () {
+    var row = findById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId);
+    if (!row) throw new Error('Venta no encontrada');
+    var estado = row.estado_registro || row.record_status;
+    if (estado === 'cotizacion') throw new Error('Convierte la cotización en venta antes de editar cobros');
+    var sellerId = row.vendedor_id || row.seller_id;
+    if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
+
+    var payRow = findById_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), paymentId);
+    if (!payRow) throw new Error('Cobro no encontrado');
+    var paySaleId = payRow.venta_id != null ? payRow.venta_id : payRow.sale_id;
+    if (Number(paySaleId) !== Number(saleId)) throw new Error('Cobro no encontrado');
+
+    var p = KYS_FIELDS.PAGO;
+    if (body.monto != null) payRow[p.monto] = body.monto;
+    if (body.amount != null) payRow[p.monto] = body.amount;
+    if (body.fecha_pago != null) payRow[p.fecha_pago] = body.fecha_pago;
+    if (body.paid_at != null) payRow[p.fecha_pago] = body.paid_at;
+    if (body.cuenta_cobro_id !== undefined) payRow[p.cuenta_cobro_id] = body.cuenta_cobro_id || '';
+    if (body.collection_account_id !== undefined) payRow[p.cuenta_cobro_id] = body.collection_account_id || '';
+    if (body.notas !== undefined) payRow[p.notas] = body.notas || '';
+    if (body.notes !== undefined) payRow[p.notas] = body.notes || '';
+    updateById_(getSheet_(KYS_CONFIG.SHEETS.PAYMENTS), paymentId, payRow);
+
+    row = applyPricingToSaleRow_(row);
+    var instRows = loadInstallmentsForSale_(saleId);
+    if (!instRows.length) {
+      instRows = rebuildInstallmentsForSale_(row);
+    }
+    var applied = applyPaymentsToSchedule_(instRows, paymentsForSale_(saleId));
+    var v = KYS_FIELDS.VENTA;
+    row[v.valor_abonado] = applied.valor_abonado;
+    row[v.pendiente] = Math.round(Math.max(num_(row[v.total] || row.total) - applied.valor_abonado, 0) * 100) / 100;
     row[v.cuotas_pagadas] = countPaidInstallments_(applied.installments);
     updateById_(getSheet_(KYS_CONFIG.SHEETS.SALES), saleId, row);
     saveInstallmentsForSale_(saleId, applied.installments);

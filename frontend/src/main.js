@@ -14,6 +14,7 @@ import {
   formatProximoVencimiento,
 } from "./labels.js";
 import { computeSalePricing } from "./pricing.js";
+import { wireDataTable } from "./table-tools.js";
 
 initLoading();
 
@@ -49,8 +50,36 @@ function nextPaymentAmount(sale) {
   return Math.max(0, (next.monto || 0) - (next.monto_pagado || 0));
 }
 
+/** One row per account name; sum balances when legacy duplicate ids exist. */
+function mergeAccountsForDisplay(accounts) {
+  const map = new Map();
+  for (const a of accounts) {
+    const key = String(a.nombre || a.name || "")
+      .trim()
+      .toLowerCase();
+    if (!key) continue;
+    const cur = map.get(key);
+    if (!cur) {
+      map.set(key, { ...a });
+      continue;
+    }
+    const id = Math.min(Number(cur.id), Number(a.id));
+    map.set(key, {
+      ...cur,
+      id,
+      saldo_inicial: (cur.saldo_inicial ?? cur.opening_balance ?? 0) + (a.saldo_inicial ?? a.opening_balance ?? 0),
+      total_comprado: (cur.total_comprado ?? cur.total_purchased ?? 0) + (a.total_comprado ?? a.total_purchased ?? 0),
+      total_recibido: (cur.total_recibido ?? cur.total_received ?? 0) + (a.total_recibido ?? a.total_received ?? 0),
+      balance: (cur.balance ?? 0) + (a.balance ?? 0),
+    });
+  }
+  return [...map.values()].sort((x, y) =>
+    String(x.nombre || x.name).localeCompare(String(y.nombre || y.name)),
+  );
+}
+
 function accountOptions(accounts, selectedId) {
-  return accounts
+  return mergeAccountsForDisplay(accounts)
     .map(
       (a) =>
         `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escHtml(a.nombre || a.name || "")}</option>`,
@@ -70,6 +99,7 @@ function saleDetailSummaryHtml(sale, isQuote) {
       <button type="button" id="editSaleBtn">Editar</button>
       ${isQuote ? "" : `<button type="button" id="paySaleBtn">Registrar cobro</button>`}
       ${isQuote ? `<button type="button" class="secondary" id="printBtn">Imprimir cotización</button>` : ""}
+      <button type="button" class="secondary" id="deleteSaleBtn">Eliminar</button>
     </div>
   </div>`;
 }
@@ -82,6 +112,56 @@ function payFormHtml(sale, accOpts, today) {
     <label>Cuenta cobro<select id="payAccount"><option value="">—</option>${accOpts}</select></label>
     <button type="button" id="payBtn">Registrar</button>
     <p class="error" id="payErr"></p>`;
+}
+
+function payEditFormHtml(payment, accounts) {
+  const fecha = payment.fecha_pago ? String(payment.fecha_pago).slice(0, 10) : "";
+  return `<p class="muted">Cobro #${payment.id}</p>
+    <label>Valor<input id="payAmount" type="number" value="${Number(payment.monto) || 0}"/></label>
+    <label>Fecha de pago<input id="payDate" type="date" value="${escAttr(fecha)}"/></label>
+    <label>Cuenta cobro<select id="payAccount"><option value="">—</option>${accountOptions(accounts, payment.cuenta_cobro_id)}</select></label>
+    <label>Notas<input id="payNotes" value="${escAttr(payment.notas || "")}"/></label>
+    <button type="button" id="paySaveBtn">Guardar abono</button>
+    <button type="button" class="secondary" id="payDeleteBtn">Eliminar abono</button>
+    <p class="error" id="payErr"></p>`;
+}
+
+function openPaymentEditModal(saleId, payment, accounts) {
+  openModal(`Editar abono #${payment.id} — venta #${saleId}`, payEditFormHtml(payment, accounts));
+  const body = modalBody();
+  body.querySelector("#paySaveBtn").onclick = async () => {
+    try {
+      const acc = body.querySelector("#payAccount").value;
+      await api(`/api/sales/${saleId}/payments/${payment.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          monto: Number(body.querySelector("#payAmount").value),
+          fecha_pago: body.querySelector("#payDate").value,
+          cuenta_cobro_id: acc ? Number(acc) : null,
+          notas: body.querySelector("#payNotes").value || null,
+        }),
+      });
+      closeModal();
+      invalidateAll();
+      render();
+    } catch (e) {
+      body.querySelector("#payErr").textContent = e.message;
+    }
+  };
+  const delBtn = body.querySelector("#payDeleteBtn");
+  if (delBtn) {
+    delBtn.onclick = async () => {
+      if (!confirm(`¿Eliminar el abono #${payment.id} por ${money(payment.monto)}?`)) return;
+      try {
+        await api(`/api/sales/${saleId}/payments/${payment.id}`, { method: "DELETE" });
+        closeModal();
+        invalidateAll();
+        render();
+      } catch (e) {
+        body.querySelector("#payErr").textContent = e.message;
+      }
+    };
+  }
 }
 
 function openPaymentModal(saleId, sale, accOpts, today) {
@@ -267,7 +347,7 @@ async function viewDashboard(root) {
     api("/api/sales/dashboard/seller"),
     api("/api/accounts/summary"),
   ]);
-  const accounts = summary.cuentas || summary.accounts || [];
+  const accounts = mergeAccountsForDisplay(summary.cuentas || summary.accounts || []);
   const cuotaRows = d.proximas_cuotas
     .map(
       (u) =>
@@ -322,9 +402,11 @@ async function viewDashboard(root) {
     ${comisionSection}
     ${accountsSection}
     <div class="card"><h2>Próximas cuotas</h2>
-    ${tableScroll(`<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuota</th><th>Valor</th><th></th></tr></thead>
+    ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuota</th><th>Valor</th><th></th></tr></thead>
     <tbody>${cuotaRows || "<tr><td colspan=6 class=muted>Sin cuotas próximas</td></tr>"}</tbody></table>`)}</div>`)
   );
+  const cuotasDashCard = root.querySelector(".card:has(table.data-table)");
+  if (cuotasDashCard) wireDataTable(cuotasDashCard, { searchPlaceholder: "Buscar cuota…" });
 }
 
 function salesListHash(extra = {}) {
@@ -372,11 +454,33 @@ async function viewSales(root) {
           : ""
       }`;
       const venceCell = showVenceCol ? `<td>${proxHtml}</td>` : "";
-      return `<tr class="${rowClass}"><td>${statusLabel(s)}</td><td>${escHtml(s.fecha_venta || s.fecha_cotizacion || "—")}</td><td>${escHtml(s.cliente?.nombre || String(s.cliente_id ?? ""))}</td><td>${escHtml(s.producto || "")}</td><td class="num">${cuotasHtml}</td>${venceCell}<td class="num">${escHtml(diaCell)}</td><td>${ultHtml}</td><td>${money(s.pendiente)}</td><td class="actions-cell">${actions}</td></tr>`;
+      const vendedorName =
+        s.vendedor?.nombre_visible ||
+        (state.user && s.vendedor_id === state.user.id ? state.user.nombre_visible : "");
+      const vendedorHtml = vendedorName ? escHtml(vendedorName) : `<span class="muted">—</span>`;
+      const fechaDisplay = s.fecha_venta || s.fecha_cotizacion || "—";
+      const fechaSort = s.fecha_venta || s.fecha_cotizacion || "";
+      const estadoTxt = statusLabel(s);
+      const clienteNombre = s.cliente?.nombre || String(s.cliente_id ?? "");
+      const cuotasSort = `${s.cuotas_pagadas ?? 0}/${s.num_cuotas ?? 0}`;
+      return `<tr class="${rowClass}"
+        data-estado="${escAttr(estadoTxt)}"
+        data-fecha="${escAttr(fechaSort)}"
+        data-cliente="${escAttr(clienteNombre)}"
+        data-producto="${escAttr(s.producto || "")}"
+        data-vendedor="${escAttr(vendedorName)}"
+        data-cuotas="${escAttr(cuotasSort)}"
+        data-prox-vence="${escAttr(s.proximo_vencimiento || "")}"
+        data-dia="${escAttr(String(s.fecha_cuota ?? ""))}"
+        data-ult-pago="${escAttr(s.fecha_ultimo_pago || "")}"
+        data-pendiente="${Number(s.pendiente) || 0}"
+      ><td>${estadoTxt}</td><td>${escHtml(fechaDisplay)}</td><td>${escHtml(clienteNombre)}</td><td>${escHtml(s.producto || "")}</td><td>${vendedorHtml}</td><td class="num">${cuotasHtml}</td>${venceCell}<td class="num">${escHtml(diaCell)}</td><td>${ultHtml}</td><td class="num">${money(s.pendiente)}</td><td class="actions-cell">${actions}</td></tr>`;
     })
     .join("");
-  const colspan = showVenceCol ? 10 : 9;
-  const venceHead = showVenceCol ? "<th>Próx. vence</th>" : "";
+  const colspan = showVenceCol ? 11 : 10;
+  const venceHead = showVenceCol
+    ? `<th class="th-sortable" data-sort="prox-vence" tabindex="0" role="button">Próx. vence</th>`
+    : "";
   root.appendChild(
     el(`<div class="card"><div class="card-head"><h1>Ventas y cotizaciones</h1>
     <div class="dash-actions">
@@ -394,8 +498,23 @@ async function viewSales(root) {
       ${venceHasta ? `<a href="${salesListHash({ vence: "" })}" class="sales-vence-clear">Quitar filtro</a>` : ""}
     </div>
     ${dueHint}
-    ${tableScroll(`<table><thead><tr><th>Estado</th><th>Fecha</th><th>Cliente</th><th>Producto</th><th>Cuotas</th>${venceHead}<th>Día pago</th><th>Últ. pago</th><th>Pendiente</th><th>Acciones</th></tr></thead><tbody>${rows || `<tr><td colspan=${colspan} class=muted>Sin registros</td></tr>`}</tbody></table>`)}</div>`)
+    ${tableScroll(`<table class="data-table"><thead><tr>
+      <th class="th-sortable" data-sort="estado" tabindex="0" role="button">Estado</th>
+      <th class="th-sortable" data-sort="fecha" tabindex="0" role="button">Fecha</th>
+      <th class="th-sortable" data-sort="cliente" tabindex="0" role="button">Cliente</th>
+      <th class="th-sortable" data-sort="producto" tabindex="0" role="button">Producto</th>
+      <th class="th-sortable" data-sort="vendedor" tabindex="0" role="button">Vendedor</th>
+      <th class="th-sortable" data-sort="cuotas" tabindex="0" role="button">Cuotas</th>
+      ${venceHead}
+      <th class="th-sortable" data-sort="dia" tabindex="0" role="button">Día pago</th>
+      <th class="th-sortable" data-sort="ult-pago" tabindex="0" role="button">Últ. pago</th>
+      <th class="th-sortable" data-sort="pendiente" data-sort-type="number" tabindex="0" role="button">Pendiente</th>
+      <th>Acciones</th>
+    </tr></thead><tbody>${rows || `<tr><td colspan=${colspan} class=muted>Sin registros</td></tr>`}</tbody></table>`)}</div>`)
   );
+
+  const salesCard = root.querySelector(".card");
+  wireDataTable(salesCard, { searchPlaceholder: "Buscar por cliente, producto, vendedor…" });
 
   const applyVence = () => {
     const val = root.querySelector("#salesVenceFilter").value;
@@ -427,7 +546,7 @@ async function viewSaleDetail(root, id) {
     .sort((a, b) => a.numero_cuota - b.numero_cuota)
     .map(
       (i) =>
-        `<tr><td>${i.numero_cuota === 0 ? "Inicial (0)" : i.numero_cuota}</td><td>${i.fecha_vencimiento || "—"}</td><td>${money(i.monto)}</td><td>${instStatusLabel(i.estado)}</td><td>${i.fecha_pago || "—"}</td><td>${money(i.monto_pagado)}</td></tr>`
+        `<tr data-numero="${i.numero_cuota}" data-vence="${escAttr(i.fecha_vencimiento || "")}" data-valor="${Number(i.monto) || 0}" data-estado="${escAttr(instStatusLabel(i.estado))}" data-fecha-pago="${escAttr(i.fecha_pago || "")}" data-abonado="${Number(i.monto_pagado) || 0}"><td>${i.numero_cuota === 0 ? "Inicial (0)" : i.numero_cuota}</td><td>${i.fecha_vencimiento || "—"}</td><td class="num">${money(i.monto)}</td><td>${instStatusLabel(i.estado)}</td><td>${i.fecha_pago || "—"}</td><td class="num">${money(i.monto_pagado)}</td></tr>`,
     )
     .join("");
   const accOpts = accountOptions(accounts, null);
@@ -453,15 +572,62 @@ async function viewSaleDetail(root, id) {
     ? ""
     : `<div class="card"><h2>Cuotas</h2>
     <p class="muted">${saleCuotasLine(sale)}</p>
-    ${tableScroll(`<table><thead><tr><th>#</th><th>Vence</th><th>Valor</th><th>Estado</th><th>Fecha pago</th><th>Abonado</th></tr></thead><tbody>${instRows}</tbody></table>`)}</div>`;
+    ${tableScroll(`<table class="data-table"><thead><tr>
+      <th class="th-sortable" data-sort="numero" data-sort-type="number" tabindex="0" role="button">#</th>
+      <th class="th-sortable" data-sort="vence" tabindex="0" role="button">Vence</th>
+      <th class="th-sortable" data-sort="valor" data-sort-type="number" tabindex="0" role="button">Valor</th>
+      <th class="th-sortable" data-sort="estado" tabindex="0" role="button">Estado</th>
+      <th class="th-sortable" data-sort="fecha-pago" tabindex="0" role="button">Fecha pago</th>
+      <th class="th-sortable" data-sort="abonado" data-sort-type="number" tabindex="0" role="button">Abonado</th>
+    </tr></thead><tbody>${instRows}</tbody></table>`)}</div>`;
+
+  const payRows = [...(sale.pagos || [])]
+    .map(
+      (p) =>
+        `<tr data-pay-id="${p.id}"><td>${p.fecha_pago || "—"}</td><td class="num">${money(p.monto)}</td><td>${escHtml(accounts.find((a) => a.id === p.cuenta_cobro_id)?.nombre || "—")}</td><td>${escHtml(p.notas || "")}</td><td class="actions-cell"><button type="button" class="secondary edit-pay-btn" data-pay-id="${p.id}">Editar</button> <button type="button" class="secondary delete-pay-btn" data-pay-id="${p.id}">Eliminar</button></td></tr>`,
+    )
+    .join("");
+  const paymentsBlock = isQuote
+    ? ""
+    : `<div class="card"><h2>Abonos registrados</h2>
+    <p class="muted">Al editar o eliminar un abono se recalculan cuotas, abonado y pendiente de la venta.</p>
+    ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Valor</th><th>Cuenta cobro</th><th>Notas</th><th></th></tr></thead>
+    <tbody>${payRows || "<tr><td colspan=5 class=muted>Sin abonos</td></tr>"}</tbody></table>`)}</div>`;
 
   root.appendChild(
     el(`<div>
     ${saleDetailSummaryHtml(sale, isQuote)}
     ${convertBlock}
+    ${paymentsBlock}
     ${installmentsBlock}
     </div>`)
   );
+
+  root.querySelectorAll(".edit-pay-btn").forEach((btn) => {
+    const payId = Number(btn.dataset.payId);
+    const payment = (sale.pagos || []).find((p) => Number(p.id) === payId);
+    if (payment) btn.onclick = () => openPaymentEditModal(id, payment, accounts);
+  });
+
+  root.querySelectorAll(".delete-pay-btn").forEach((btn) => {
+    const payId = Number(btn.dataset.payId);
+    const payment = (sale.pagos || []).find((p) => Number(p.id) === payId);
+    if (!payment) return;
+    btn.onclick = async () => {
+      if (!confirm(`¿Eliminar el abono #${payment.id} por ${money(payment.monto)}?`)) return;
+      try {
+        await api(`/api/sales/${id}/payments/${payment.id}`, { method: "DELETE" });
+        invalidateAll();
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+
+  root.querySelectorAll(".card:has(table.data-table)").forEach((card) => {
+    wireDataTable(card, { searchPlaceholder: card.querySelector("h2")?.textContent?.includes("Abonos") ? "Buscar abono…" : "Buscar cuota…" });
+  });
 
   const openEditModal = () => {
     openModal(isQuote ? `Editar cotización #${sale.id}` : `Editar venta #${sale.id}`, saleEditFormHtml(sale, accounts, isQuote));
@@ -480,6 +646,27 @@ async function viewSaleDetail(root, id) {
   };
 
   root.querySelector("#editSaleBtn").onclick = openEditModal;
+  const deleteSaleBtn = root.querySelector("#deleteSaleBtn");
+  if (deleteSaleBtn) {
+    deleteSaleBtn.onclick = async () => {
+      const label = isQuote ? "cotización" : "venta";
+      if (
+        !confirm(
+          `¿Eliminar ${label} #${sale.id} (${sale.producto || ""})? Se borrarán también cuotas y cobros asociados.`,
+        )
+      ) {
+        return;
+      }
+      try {
+        await api(`/api/sales/${id}`, { method: "DELETE" });
+        invalidateAll();
+        location.hash = "#/sales";
+        render();
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  }
   const payOpenBtn = root.querySelector("#paySaleBtn");
   if (payOpenBtn) payOpenBtn.onclick = () => openPaymentModal(id, sale, accOpts, today);
 
@@ -678,7 +865,7 @@ async function viewClients(root) {
   const clients = await getClientes(api);
   root.appendChild(
     el(`<div class="card"><div class="card-head"><h1>Clientes</h1><button type="button" id="openClientModal">Agregar cliente</button></div>
-    ${tableScroll(`<table><thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Dirección</th></tr></thead>
+    ${tableScroll(`<table class="data-table"><thead><tr><th>Nombre</th><th>Teléfono</th><th>Email</th><th>Dirección</th></tr></thead>
     <tbody>${clients
       .map(
         (c) =>
@@ -686,6 +873,7 @@ async function viewClients(root) {
       )
       .join("") || `<tr><td colspan="4" class="muted">Sin clientes</td></tr>`}</tbody></table>`)}</div>`),
   );
+  wireDataTable(root.querySelector(".card"), { searchPlaceholder: "Buscar cliente…" });
   root.querySelector("#openClientModal").onclick = () => {
     openModal("Agregar cliente", clientFormHtml());
     wireClientForm(modalBody());
@@ -700,7 +888,7 @@ function accountTypeLabel(t) {
 
 async function viewAccounts(root, focusAccountId) {
   const summary = await api("/api/accounts/summary");
-  const accounts = summary.cuentas || summary.accounts || [];
+  const accounts = mergeAccountsForDisplay(summary.cuentas || summary.accounts || []);
   let movements = summary.movimientos || summary.movements || [];
   const isAdmin = state.user.rol === "admin";
   const focusId = focusAccountId ? Number(focusAccountId) : null;
@@ -764,13 +952,15 @@ async function viewAccounts(root, focusAccountId) {
     ${focusBanner}
     <div class="card"><div class="card-head"><h1>${focusAcc ? "Resumen de cuentas" : "Cuentas"}</h1>${adminToolbar}</div>
     <p class="muted">Comprado = valor de ventas con esa cuenta de compra. Recibido = cobros con esa cuenta. Balance = saldo inicial + recibido − comprado.</p>
-    ${tableScroll(`<table class="table-spaced"><thead><tr>
+    ${tableScroll(`<table class="data-table table-spaced"><thead><tr>
       <th>Cuenta</th><th>Tipo</th><th>Comprado</th><th>Recibido</th><th>Saldo inicial</th><th>Balance</th><th></th>${isAdmin ? "<th></th>" : ""}
     </tr></thead><tbody>${balanceRows || `<tr><td colspan=${isAdmin ? 8 : 7} class=muted>Sin cuentas</td></tr>`}</tbody></table>`)}</div>
     <div class="card"><h2>${focusAcc ? `Movimientos — ${escHtml(focusAcc.nombre || focusAcc.name)}` : "Movimientos"}</h2>
-    ${tableScroll(`<table><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Valor</th><th>Ref</th><th>Detalle</th></tr></thead>
+    ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Valor</th><th>Ref</th><th>Detalle</th></tr></thead>
     <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (asigna cuenta en ventas y cobros)</td></tr>"}</tbody></table>`)}</div></div>`)
   );
+
+  wireDataTable(root, { searchPlaceholder: "Buscar…" });
 
   const openAccBtn = root.querySelector("#openAccModal");
   if (openAccBtn) {
@@ -886,7 +1076,7 @@ async function viewVendedores(root, focusId) {
         <button type="submit">Registrar pago</button>
       </form>
       <h3>Historial de pagos</h3>
-      ${tableScroll(`<table><thead><tr><th>Fecha</th><th>Monto</th><th>Notas</th></tr></thead><tbody>${pagos || "<tr><td colspan=3 class=muted>Sin pagos</td></tr>"}</tbody></table>`)}`;
+      ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Monto</th><th>Notas</th></tr></thead><tbody>${pagos || "<tr><td colspan=3 class=muted>Sin pagos</td></tr>"}</tbody></table>`)}`;
   } else if (selectedId && !selectedIsSeller) {
     detailHtml = `<h2>${escHtml(selectedUser.nombre_visible)}</h2>
       <p class="muted">Rol: <strong>${escHtml(rolLabel(selectedUser.rol))}</strong>. Los administradores no reciben comisión por ventas.</p>`;
@@ -896,10 +1086,12 @@ async function viewVendedores(root, focusId) {
     el(`<div class="card"><h1>Usuarios y comisiones</h1>
       <p class="muted">El rol (<code>admin</code> / <code>seller</code> en la tabla <code>usuarios</code>) define quién es administrador y quién vendedor. El valor pagado se guarda en <code>usuarios.comision_pagada</code> y sube con cada pago registrado.</p>
       <div class="grid2">
-        <div>${tableScroll(`<table><thead><tr><th>Nombre</th><th>Rol</th><th>Email</th><th>Valor pagado</th></tr></thead><tbody>${listRows || "<tr><td colspan=4 class=muted>Sin usuarios</td></tr>"}</tbody></table>`)}</div>
+        <div>${tableScroll(`<table class="data-table"><thead><tr><th>Nombre</th><th>Rol</th><th>Email</th><th>Valor pagado</th></tr></thead><tbody>${listRows || "<tr><td colspan=4 class=muted>Sin usuarios</td></tr>"}</tbody></table>`)}</div>
         <div class="card" id="vendedor-detail">${detailHtml}</div>
       </div></div>`),
   );
+
+  wireDataTable(root, { searchPlaceholder: "Buscar…" });
 
   const pagoForm = root.querySelector("#pagoComForm");
   if (pagoForm && selectedId) {

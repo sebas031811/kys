@@ -10,10 +10,12 @@
     "gas:deploy": "node scripts/gas-push.mjs && node scripts/gas-deploy.mjs",
     "supabase:login": "supabase login",
     "supabase:link": "node scripts/supabase-require-auth.mjs && supabase link",
-    "supabase:deploy": "node scripts/supabase-require-auth.mjs && supabase secrets set KYS_PWD_SALT=kys-change-salt-in-production && supabase functions deploy kys-api --no-verify-jwt --use-api"
+    "supabase:deploy": "node scripts/supabase-require-auth.mjs && supabase secrets set KYS_PWD_SALT=kys-change-salt-in-production && supabase functions deploy kys-api --no-verify-jwt --use-api",
+    "import:db-ks": "node scripts/import-db-ks.mjs"
   },
   "devDependencies": {
     "@google/clasp": "^3.4.1",
+    "pg": "^8.16.0",
     "supabase": "^3.0.0"
   }
 }

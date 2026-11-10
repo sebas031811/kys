@@ -9,6 +9,9 @@ import {
   patchSale,
   sellerDashboard,
   recordPayment,
+  patchPayment,
+  deletePayment,
+  deleteSale,
   confirmSale,
 } from "./lib/sales.ts";
 import { vendedorComisionResumen, recordPagoComisionVendedor } from "./lib/commissions.ts";
@@ -125,12 +128,22 @@ async function routeApi(method: string, path: string, body: Record<string, unkno
     return createSale(db, me, body ?? {});
   }
 
+  const salePaymentMatch = path.match(/^\/api\/sales\/(\d+)\/payments\/(\d+)$/);
+  if (salePaymentMatch) {
+    const saleId = Number(salePaymentMatch[1]);
+    const paymentId = Number(salePaymentMatch[2]);
+    const me = await requireUser(db, token);
+    if (method === "PATCH") return patchPayment(db, me, saleId, paymentId, body ?? {});
+    if (method === "DELETE") return deletePayment(db, me, saleId, paymentId);
+  }
+
   const saleMatch = path.match(/^\/api\/sales\/(\d+)(\/confirm|\/payments)?$/);
   if (saleMatch) {
     const saleId = Number(saleMatch[1]);
     const sub = saleMatch[2];
     const me = await requireUser(db, token);
     if (method === "GET" && !sub) return getSale(db, me, saleId);
+    if (method === "DELETE" && !sub) return deleteSale(db, me, saleId);
     if (method === "PATCH" && !sub) return patchSale(db, me, saleId, body ?? {});
     if (method === "POST" && sub === "/confirm") return confirmSale(db, me, saleId, body ?? {});
     if (method === "POST" && sub === "/payments") return recordPayment(db, me, saleId, body ?? {});

@@ -16,6 +16,16 @@ function pricingInputFromBody_(payload) {
   };
 }
 
+function ventaPricingInputFromRow_(row) {
+  return {
+    valor: row.valor != null ? row.valor : row.cost_price,
+    porcentaje: row.porcentaje != null ? row.porcentaje : row.margin_rate,
+    inicial: row.inicial != null ? row.inicial : row.down_payment,
+    num_cuotas: row.num_cuotas != null ? row.num_cuotas : row.installment_count,
+    periodo_pago: row.periodo_pago || row.payment_period || 'Mensual',
+  };
+}
+
 function computeSalePricing_(payload) {
   var input = pricingInputFromBody_(payload);
   var valor = num_(input.valor);

@@ -37,6 +37,9 @@ create table if not exists cuentas (
   notas text
 );
 
+create unique index if not exists idx_cuentas_nombre_unique
+  on cuentas (lower(trim(nombre)));
+
 create table if not exists ventas (
   id bigserial primary key,
   cliente_id bigint references clientes (id),

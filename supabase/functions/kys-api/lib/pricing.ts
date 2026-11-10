@@ -3,6 +3,24 @@ export function num(v: unknown): number {
   return Number.isNaN(n) ? 0 : n;
 }
 
+/** Pricing drivers only — omits persisted total/cuota so edits recalculate correctly. */
+export function ventaPricingInput(
+  row: Record<string, unknown>,
+  body: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const pick = (k: string) => (body[k] !== undefined ? body[k] : row[k]);
+  const input: Record<string, unknown> = {
+    valor: pick("valor"),
+    porcentaje: pick("porcentaje"),
+    inicial: pick("inicial"),
+    num_cuotas: pick("num_cuotas"),
+    periodo_pago: pick("periodo_pago"),
+  };
+  if (body.total !== undefined) input.total = body.total;
+  if (body.cuota !== undefined) input.cuota = body.cuota;
+  return input;
+}
+
 export function computeSalePricing(payload: Record<string, unknown>) {
   const valor = num(payload.valor ?? payload.cost_price);
   let rate = num(payload.porcentaje ?? payload.margin_rate);

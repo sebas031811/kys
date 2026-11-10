@@ -79,11 +79,22 @@ function routeApi_(method, path, body, token) {
     return createSale_(token, body);
   }
 
+  var salePaymentMatch = path.match(/^\/api\/sales\/(\d+)\/payments\/(\d+)$/);
+  if (salePaymentMatch) {
+    if (method === 'PATCH') {
+      return updatePayment_(token, salePaymentMatch[1], salePaymentMatch[2], body);
+    }
+    if (method === 'DELETE') {
+      return deletePayment_(token, salePaymentMatch[1], salePaymentMatch[2]);
+    }
+  }
+
   var saleMatch = path.match(/^\/api\/sales\/(\d+)(\/confirm|\/payments)?$/);
   if (saleMatch) {
     var saleId = saleMatch[1];
     var sub = saleMatch[2];
     if (method === 'GET' && !sub) return getSale_(token, saleId);
+    if (method === 'DELETE' && !sub) return deleteSale_(token, saleId);
     if (method === 'PATCH' && !sub) return updateSale_(token, saleId, body);
     if (method === 'POST' && sub === '/confirm') return confirmSale_(token, saleId, body);
     if (method === 'POST' && sub === '/payments') return recordPayment_(token, saleId, body);

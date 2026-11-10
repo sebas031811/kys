@@ -1,0 +1,30 @@
+{
+  "default_tipo_cuenta": "both",
+  "mappings": {
+    "Visa Karen": "Visa Karen",
+    "Nu Karen": "Nu Karen",
+    "Nu Sebas": "Nu Sebas",
+    "Visa Sebas": "Visa Sebas",
+    "Mastercard Sebas": "Mastercard Sebas",
+    "Tarjeta Sebas": "Tarjeta Sebas",
+    "Cuenta Sebas": "Cuenta Sebas",
+    "Cta Rei": "Cta Rei",
+    "Rei": "Cta Rei",
+    "Cuenta Karen": "Cuenta Karen",
+    "Cencosud Juli": "Cencosud Juli",
+    "Tarjeta éxito Diana": "Tarjeta éxito Diana",
+    "Tarjeta éxito Diana ": "Tarjeta éxito Diana",
+    "Efectivo": "Efectivo",
+    "Efe Sebas": "Efectivo Sebas",
+    "Sebastián efectivo": "Efectivo Sebas",
+    "Sebastián efectivo ": "Efectivo Sebas",
+    "Contado": "Contado",
+    "Efectivo y cta Karen": "Efectivo y cta Karen",
+    "Efectivo y cta Karen y cta Rei": "Efectivo mixto Karen Rei",
+    "Efectivo y cta Karen y cta Rei\n": "Efectivo mixto Karen Rei",
+    "Cta Karen": "Cuenta Karen",
+    "Cta Sebas": "Cuenta Sebas",
+    "Karen": "Cuenta Karen",
+    "Sebas": "Efectivo Sebas"
+  }
+}

@@ -38,6 +38,7 @@ var KYS_FIELDS = {
     porcentaje: 'porcentaje',
     inicial: 'inicial',
     ganancia: 'ganancia',
+    porcentaje_comision: 'porcentaje_comision',
     total: 'total',
     num_cuotas: 'num_cuotas',
     cuota: 'cuota',
@@ -48,8 +49,6 @@ var KYS_FIELDS = {
     compra: 'compra',
     tarjeta: 'tarjeta',
     cuota_tarjeta: 'cuota_tarjeta',
-    ganancia_vivi: 'ganancia_vivi',
-    abonado_vivi: 'abonado_vivi',
     cuotas_pagadas: 'cuotas_pagadas',
     observaciones: 'observaciones',
     estado_registro: 'estado_registro',
@@ -161,8 +160,8 @@ function ventaHeaders_() {
   var v = KYS_FIELDS.VENTA;
   return [
     v.id, v.cliente_id, v.vendedor_id, v.cuenta_compra_id, v.producto, v.fecha_venta, v.fecha_cotizacion,
-    v.fecha_entrega, v.valor, v.porcentaje, v.inicial, v.ganancia, v.total, v.num_cuotas, v.cuota,
+    v.fecha_entrega, v.valor, v.porcentaje, v.inicial, v.ganancia, v.porcentaje_comision, v.total, v.num_cuotas, v.cuota,
     v.periodo_pago, v.fecha_cuota, v.valor_abonado, v.pendiente, v.compra, v.tarjeta, v.cuota_tarjeta,
-    v.ganancia_vivi, v.abonado_vivi, v.cuotas_pagadas, v.observaciones, v.estado_registro,
+    v.cuotas_pagadas, v.observaciones, v.estado_registro,
   ];
 }

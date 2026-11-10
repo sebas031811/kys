@@ -344,6 +344,77 @@ nav a.nav-active {
   color: var(--warn);
 }
 
+.table-toolbar {
+  margin: 0.75rem 0 0.5rem;
+}
+
+.table-toolbar .table-search {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+}
+
+.table-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-top: 0.65rem;
+  font-size: 0.88rem;
+}
+
+.table-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.table-page-actions button {
+  width: auto;
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+}
+
+.table-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.table-page-size select {
+  width: auto;
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+}
+
+th.th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th.th-sortable:hover {
+  color: var(--text);
+}
+
+th.th-sortable::after {
+  content: " ⇅";
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: normal;
+}
+
+th.th-sort-asc::after {
+  content: " ↑";
+  color: var(--accent);
+}
+
+th.th-sort-desc::after {
+  content: " ↓";
+  color: var(--accent);
+}
+
 .table-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -351,7 +422,7 @@ nav a.nav-active {
 }
 
 .table-scroll table {
-  min-width: 640px;
+  min-width: 720px;
 }
 
 .table-spaced {

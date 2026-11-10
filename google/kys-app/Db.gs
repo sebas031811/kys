@@ -96,6 +96,13 @@ function findById_(sh, id) {
   return rowToObject_(headers, values);
 }
 
+function deleteById_(sh, id) {
+  var rowNum = findSheetRowById_(sh, id);
+  if (!rowNum) return false;
+  sh.deleteRow(rowNum);
+  return true;
+}
+
 function updateById_(sh, id, patch) {
   var rowNum = findSheetRowById_(sh, id);
   if (!rowNum) return null;

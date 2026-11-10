@@ -1,5 +1,5 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { computeSalePricing, num } from "./pricing.ts";
+import { computeSalePricing, num, ventaPricingInput } from "./pricing.ts";
 import { userOut } from "./auth.ts";
 import {
   DEFAULT_PORCENTAJE_COMISION,
@@ -38,6 +38,16 @@ function nextUnpaidDue(cuotas: ReturnType<typeof installmentOut>[]) {
     proximo_vencimiento: next.fecha_vencimiento ? String(next.fecha_vencimiento) : null,
     proximo_vencimiento_estado: next.estado,
     proximo_vencimiento_numero: next.numero_cuota,
+  };
+}
+
+function paymentOut(row: Record<string, unknown>) {
+  return {
+    id: Number(row.id),
+    monto: num(row.monto),
+    fecha_pago: row.fecha_pago ?? null,
+    cuenta_cobro_id: row.cuenta_cobro_id ? Number(row.cuenta_cobro_id) : null,
+    notas: row.notas ?? null,
   };
 }
 
@@ -89,6 +99,7 @@ export function saleOut(row: Record<string, unknown>, cliente: Record<string, un
     fecha_ultimo_pago: null as string | null,
     cuotas,
     cliente: cliente ? clientOut(cliente) : null,
+    vendedor: null as { id: number; nombre_visible: string } | null,
   };
 }
 
@@ -107,10 +118,21 @@ function clientFromJoin(row: Record<string, unknown>) {
   };
 }
 
+function vendedorFromJoin(row: Record<string, unknown>) {
+  const u = row.usuarios as Record<string, unknown> | null;
+  if (!u || typeof u !== "object") return null;
+  return {
+    id: Number(u.id),
+    nombre_visible: String(u.nombre_visible ?? ""),
+  };
+}
+
 export async function listSales(db: SupabaseClient, me: ReturnType<typeof userOut>, estado: string | null) {
   let q = db
     .from("ventas")
-    .select("*, clientes(id, nombre, telefono, identificacion, email, direccion, texto_cliente, notas)")
+    .select(
+      "*, clientes(id, nombre, telefono, identificacion, email, direccion, texto_cliente, notas), usuarios(id, nombre_visible)",
+    )
     .order("id", { ascending: false })
     .limit(200);
   if (estado) q = q.eq("estado_registro", estado);
@@ -135,9 +157,14 @@ export async function listSales(db: SupabaseClient, me: ReturnType<typeof userOu
   }
   return rows.map((r) => {
     const cliente = clientFromJoin(r);
-    const { clientes: _c, ...venta } = r as Record<string, unknown> & { clientes?: unknown };
+    const vendedor = vendedorFromJoin(r);
+    const { clientes: _c, usuarios: _u, ...venta } = r as Record<string, unknown> & {
+      clientes?: unknown;
+      usuarios?: unknown;
+    };
     const cuotas = cuotasBySale[Number(r.id)] ?? [];
     const sale = saleOut(venta, cliente, cuotas);
+    sale.vendedor = vendedor;
     sale.fecha_ultimo_pago = lastBySale[sale.id] ?? null;
     Object.assign(sale, nextUnpaidDue(cuotas));
     return sale;
@@ -150,10 +177,14 @@ export async function getSale(db: SupabaseClient, me: ReturnType<typeof userOut>
   if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
 
   const { data: cliente } = await db.from("clientes").select("*").eq("id", row.cliente_id).maybeSingle();
-  const { data: cuotasRows } = await db.from("cuotas").select("*").eq("venta_id", saleId).order("numero_cuota");
+  const [{ data: cuotasRows }, { data: pagosRows }] = await Promise.all([
+    db.from("cuotas").select("*").eq("venta_id", saleId).order("numero_cuota"),
+    db.from("pagos").select("*").eq("venta_id", saleId).order("fecha_pago").order("id"),
+  ]);
   const cuotas = (cuotasRows ?? []).map(installmentOut);
   const { data: cuentas } = await db.from("cuentas").select("*").order("nombre");
   const sale = saleOut(row, cliente, cuotas);
+  sale.pagos = (pagosRows ?? []).map(paymentOut);
   if (sale.cuotas_pagadas == null) {
     sale.cuotas_pagadas = cuotas.filter((c) => c.estado === "pagada").length;
   }
@@ -227,11 +258,7 @@ export async function patchSale(db: SupabaseClient, me: ReturnType<typeof userOu
   if (fe || !row) throw new Error("Venta no encontrada");
   if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
 
-  const merged: Record<string, unknown> = { ...row };
-  Object.keys(body).forEach((k) => {
-    if (body[k] !== undefined && VENTA_KEYS.has(k)) merged[k] = body[k];
-  });
-  const pricing = computeSalePricing(merged);
+  const pricing = computeSalePricing(ventaPricingInput(row, body));
   const collected = num(row.valor_abonado);
   const patch: Record<string, unknown> = {
     ganancia: pricing.ganancia,
@@ -322,6 +349,94 @@ export async function sellerDashboard(
     proximas_cuotas: proximas_cuotas.slice(0, 50),
     comision,
   };
+}
+
+const PAGO_KEYS = new Set(["monto", "fecha_pago", "cuenta_cobro_id", "notas"]);
+
+async function assertSaleAccess(
+  db: SupabaseClient,
+  me: ReturnType<typeof userOut>,
+  saleId: number,
+) {
+  const { data: row, error } = await db.from("ventas").select("vendedor_id").eq("id", saleId).maybeSingle();
+  if (error || !row) throw new Error("Venta no encontrada");
+  if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
+  return row;
+}
+
+export async function deleteSale(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number) {
+  await assertSaleAccess(db, me, saleId);
+  const { error } = await db.from("ventas").delete().eq("id", saleId);
+  if (error) throw new Error(error.message);
+  return { ok: true, id: saleId };
+}
+
+export async function patchPayment(
+  db: SupabaseClient,
+  me: ReturnType<typeof userOut>,
+  saleId: number,
+  paymentId: number,
+  body: Record<string, unknown>,
+) {
+  const { data: ventaRow, error: ve } = await db.from("ventas").select("*").eq("id", saleId).maybeSingle();
+  if (ve || !ventaRow) throw new Error("Venta no encontrada");
+  if (me.rol === "seller" && Number(ventaRow.vendedor_id) !== me.id) throw new Error("Acceso denegado");
+  if (ventaRow.estado_registro === "cotizacion") {
+    throw new Error("Convierte la cotización en venta antes de editar cobros");
+  }
+
+  const { data: existing, error: pe } = await db
+    .from("pagos")
+    .select("*")
+    .eq("id", paymentId)
+    .eq("venta_id", saleId)
+    .maybeSingle();
+  if (pe || !existing) throw new Error("Cobro no encontrado");
+
+  const patch: Record<string, unknown> = {};
+  Object.keys(body).forEach((k) => {
+    if (body[k] !== undefined && PAGO_KEYS.has(k)) patch[k] = body[k];
+  });
+  if (patch.cuenta_cobro_id === "") patch.cuenta_cobro_id = null;
+  if (!Object.keys(patch).length) throw new Error("Sin cambios");
+
+  const { error: ue } = await db.from("pagos").update(patch).eq("id", paymentId);
+  if (ue) throw new Error(ue.message);
+
+  const { data: refreshed } = await db.from("ventas").select("total").eq("id", saleId).single();
+  await syncSalePaymentsToCuotas(db, saleId, num(refreshed?.total ?? ventaRow.total));
+
+  return getSale(db, me, saleId);
+}
+
+export async function deletePayment(
+  db: SupabaseClient,
+  me: ReturnType<typeof userOut>,
+  saleId: number,
+  paymentId: number,
+) {
+  const { data: ventaRow, error: ve } = await db.from("ventas").select("*").eq("id", saleId).maybeSingle();
+  if (ve || !ventaRow) throw new Error("Venta no encontrada");
+  if (me.rol === "seller" && Number(ventaRow.vendedor_id) !== me.id) throw new Error("Acceso denegado");
+  if (ventaRow.estado_registro === "cotizacion") {
+    throw new Error("Convierte la cotización en venta antes de eliminar cobros");
+  }
+
+  const { data: existing, error: pe } = await db
+    .from("pagos")
+    .select("id")
+    .eq("id", paymentId)
+    .eq("venta_id", saleId)
+    .maybeSingle();
+  if (pe || !existing) throw new Error("Cobro no encontrado");
+
+  const { error: de } = await db.from("pagos").delete().eq("id", paymentId);
+  if (de) throw new Error(de.message);
+
+  const { data: refreshed } = await db.from("ventas").select("total").eq("id", saleId).single();
+  await syncSalePaymentsToCuotas(db, saleId, num(refreshed?.total ?? ventaRow.total));
+
+  return getSale(db, me, saleId);
 }
 
 export async function recordPayment(db: SupabaseClient, me: ReturnType<typeof userOut>, saleId: number, body: Record<string, unknown>) {
