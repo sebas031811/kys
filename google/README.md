@@ -1,9 +1,8 @@
-# KYS on Google
+# Legacy Google Apps Script stack
 
-**Spreadsheet = database · Web app = forms**
+This folder is **deprecated**. Production uses:
 
-Full instructions: **[SETUP.md](SETUP.md)**
+- Frontend: Cloudflare Pages (`frontend/`)
+- API: Supabase Edge Function `kys-api`
 
-Code lives in [`kys-app/`](kys-app/).
-
-After `npm run build` in `frontend/`, copy **`kys-app/Index.html`** into Apps Script.
+Scripts `npm run gas:*` remain for occasional sheet migration only.

@@ -1,13 +1,11 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { num } from "./pricing.ts";
+import { num, normalizePercentRate } from "./pricing.ts";
 import { userOut } from "./auth.ts";
 
 export const DEFAULT_PORCENTAJE_COMISION = 30;
 
 export function commissionRate(pct: unknown): number {
-  let rate = num(pct);
-  if (rate > 1) rate /= 100;
-  return Math.max(0, rate);
+  return Math.max(0, normalizePercentRate(pct));
 }
 
 export function salePorcentajeComision(sale: Record<string, unknown>): number {
