@@ -55,6 +55,10 @@ function routeApi_(method, path, body, token) {
     return listAccounts_();
   }
   if (method === 'POST' && path === '/api/accounts') return createAccount_(body, token);
+  if (method === 'POST' && path === '/api/accounts/transfers') {
+    requireUser_(token);
+    return recordAccountTransfer_(body, token);
+  }
 
   var accountMatch = path.match(/^\/api\/accounts\/(\d+)$/);
   if (accountMatch && method === 'PATCH') {

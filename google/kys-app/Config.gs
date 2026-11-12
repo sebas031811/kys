@@ -12,6 +12,7 @@ var KYS_CONFIG = {
     SALES: 'Ventas',
     INSTALLMENTS: 'Cuotas',
     PAYMENTS: 'Pagos',
+    ACCOUNT_TRANSFERS: 'TransferenciasCuenta',
   },
   SPREADSHEET_ID_PROPERTY: 'KYS_SPREADSHEET_ID',
 };

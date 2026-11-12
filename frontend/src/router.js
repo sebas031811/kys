@@ -21,6 +21,7 @@ async function render() {
   const salesParams = new URLSearchParams(hashQuery || "");
   state.salesFilter = salesParams.get("filter") || "";
   state.salesVenceHasta = salesParams.get("vence") || "";
+  state.salesCompletadas = salesParams.get("completadas") === "1";
   const [path, param] = hashPath.split("/").filter(Boolean);
   const route = path || "dashboard";
   state.navSection =

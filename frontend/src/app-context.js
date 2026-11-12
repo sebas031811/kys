@@ -5,6 +5,7 @@ export const state = {
   navSection: "dashboard",
   salesFilter: "",
   salesVenceHasta: "",
+  salesCompletadas: false,
 };
 
 let renderImpl = async () => {};

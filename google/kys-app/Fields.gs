@@ -73,6 +73,15 @@ var KYS_FIELDS = {
     fecha_pago: 'fecha_pago',
     notas: 'notas',
   },
+  TRANSFERENCIA_CUENTA: {
+    id: 'id',
+    cuenta_origen_id: 'cuenta_origen_id',
+    cuenta_destino_id: 'cuenta_destino_id',
+    monto: 'monto',
+    fecha: 'fecha',
+    notas: 'notas',
+    registrado_por_id: 'registrado_por_id',
+  },
 };
 
 var KYS_LEGACY_HEADER_MAP_ = {

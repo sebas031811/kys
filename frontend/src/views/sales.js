@@ -9,8 +9,10 @@ import {
   formatCuotasRatio,
   formatUltimoPago,
   saleMatchesVenceHasta,
+  saleMatchesCompletadas,
   salePaymentRowClassForVence,
   formatProximoVencimiento,
+  formatVenceFilterCell,
 } from "../labels.js";
 import { computeSalePricing } from "../pricing.js";
 import { readSalePricingPayload, wireSalePricingPreview } from "../sale-pricing.js";
@@ -215,10 +217,13 @@ function wireSaleEditForm(root) {
 
 export function salesListHash(extra = {}) {
   const p = new URLSearchParams();
-  const estado = extra.filter ?? state.salesFilter;
+  const estado = extra.filter !== undefined ? extra.filter : state.salesFilter;
   const vence = extra.vence !== undefined ? extra.vence : state.salesVenceHasta;
+  const completadas =
+    extra.completadas !== undefined ? extra.completadas : state.salesCompletadas;
   if (estado) p.set("filter", estado);
   if (vence) p.set("vence", vence);
+  if (completadas) p.set("completadas", "1");
   const q = p.toString();
   return `#/sales${q ? `?${q}` : ""}`;
 }
@@ -226,11 +231,14 @@ export function salesListHash(extra = {}) {
 export async function viewSales(root) {
   const filter = state.salesFilter || "";
   const venceHasta = state.salesVenceHasta || "";
+  const onlyCompletadas = state.salesCompletadas;
   const qs = filter ? `?estado_registro=${filter === "venta" ? "venta" : "cotizacion"}` : "";
   const today = new Date().toISOString().slice(0, 10);
   const venceInputValue = venceHasta || today;
   const [salesRaw, accounts] = await Promise.all([api(`/api/sales${qs}`), getCuentas(api)]);
-  let sales = salesRaw.filter((s) => saleMatchesVenceHasta(s, venceHasta));
+  let sales = salesRaw
+    .filter((s) => saleMatchesVenceHasta(s, venceHasta))
+    .filter((s) => saleMatchesCompletadas(s, onlyCompletadas));
   if (venceHasta) {
     sales = [...sales].sort((a, b) =>
       String(a.proximo_vencimiento || "").localeCompare(String(b.proximo_vencimiento || "")),
@@ -239,15 +247,20 @@ export async function viewSales(root) {
   const accOpts = accountOptions(accounts, null);
   const showVenceCol = Boolean(venceHasta);
   const dueHint = venceHasta
-    ? `<p class="muted sales-dia-hint">Cuotas con vencimiento hasta <strong>${escHtml(venceHasta)}</strong> — verde = pagada; rojo = pendiente.</p>`
+    ? `<p class="muted sales-dia-hint">Cuotas impagas con vencimiento hasta <strong>${escHtml(venceHasta)}</strong> — <span class="text-warn">amarillo</span> = por vencer; <span class="text-late">rojo</span> = vencida (antes de hoy).</p>`
     : "";
+  const completadasHint = onlyCompletadas
+    ? `<p class="muted sales-dia-hint">Mostrando ventas <strong>saldadas</strong> (pendiente $0).</p>`
+    : venceHasta
+      ? ""
+      : `<p class="muted sales-dia-hint">Filas en <strong>verde</strong> = venta saldada (pendiente $0).</p>`;
   const rows = sales
     .map((s) => {
-      const rowClass = salePaymentRowClassForVence(s, venceHasta);
+      const rowClass = salePaymentRowClassForVence(s, venceHasta, today);
       const cuotasCell = formatCuotasRatio(s);
       const cuotasHtml = cuotasCell === "—" ? `<span class="muted">—</span>` : cuotasCell;
       const diaCell = formatDiaCuota(s.fecha_cuota);
-      const proxVence = formatProximoVencimiento(s);
+      const proxVence = showVenceCol ? formatVenceFilterCell(s, venceHasta) : formatProximoVencimiento(s);
       const proxHtml = proxVence === "—" ? `<span class="muted">—</span>` : escHtml(proxVence);
       const ultPago = formatUltimoPago(s.fecha_ultimo_pago);
       const ultHtml = ultPago === "—" ? `<span class="muted">—</span>` : escHtml(ultPago);
@@ -283,7 +296,7 @@ export async function viewSales(root) {
     .join("");
   const colspan = showVenceCol ? 11 : 10;
   const venceHead = showVenceCol
-    ? `<th class="th-sortable" data-sort="prox-vence" tabindex="0" role="button">Próx. vence</th>`
+    ? `<th class="th-sortable" data-sort="prox-vence" tabindex="0" role="button">Cuotas en rango</th>`
     : "";
   root.appendChild(
     el(`<div class="card"><div class="card-head"><h1>Ventas y cotizaciones</h1>
@@ -292,9 +305,10 @@ export async function viewSales(root) {
       <a class="dash-action" href="#/sales/new?cotizacion=1">Nueva cotización</a>
     </div></div>
     <p class="sales-filter-links">
-      <a href="${salesListHash({ filter: "" })}">Todas</a> ·
-      <a href="${salesListHash({ filter: "cotizacion" })}">Cotizaciones</a> ·
-      <a href="${salesListHash({ filter: "venta" })}">Ventas</a>
+      <a href="${salesListHash({ filter: "", completadas: false })}">Todas</a> ·
+      <a href="${salesListHash({ filter: "cotizacion", completadas: false })}">Cotizaciones</a> ·
+      <a href="${salesListHash({ filter: "venta", completadas: false })}">Ventas</a> ·
+      <a href="${salesListHash({ filter: "venta", completadas: true })}">Completadas ($0)</a>
     </p>
     <div class="sales-vence-filter">
       <label>Vence hasta (incluye ese día)<input type="date" id="salesVenceFilter" value="${escAttr(venceInputValue)}"/></label>
@@ -302,6 +316,7 @@ export async function viewSales(root) {
       ${venceHasta ? `<a href="${salesListHash({ vence: "" })}" class="sales-vence-clear">Quitar filtro</a>` : ""}
     </div>
     ${dueHint}
+    ${completadasHint}
     ${tableScroll(`<table class="data-table"><thead><tr>
       <th class="th-sortable" data-sort="estado" tabindex="0" role="button">Estado</th>
       <th class="th-sortable" data-sort="fecha" tabindex="0" role="button">Fecha</th>

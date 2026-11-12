@@ -80,6 +80,13 @@ a.dash-action--primary {
   margin: 0;
 }
 
+.toolbar-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -163,6 +170,14 @@ tr.row-pay-late {
 
 tr.row-pay-late td:first-child {
   box-shadow: inset 3px 0 0 #f07178;
+}
+
+tr.row-pay-due {
+  background: rgba(245, 165, 36, 0.16);
+}
+
+tr.row-pay-due td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn);
 }
 
 tr.row-dim {
@@ -338,6 +353,10 @@ nav a.nav-active {
 
 .text-ok {
   color: var(--ok);
+}
+
+.text-late {
+  color: #f07178;
 }
 
 .text-warn {

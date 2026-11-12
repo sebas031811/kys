@@ -1,6 +1,6 @@
 import { adminClient, authLogin, authMe, destroySession, requireUser, userOut } from "./lib/auth.ts";
 import { listClients, createClient, parseClientRequest } from "./lib/clients.ts";
-import { listAccounts, createAccount, updateAccount, listAccountsSummary } from "./lib/accounts.ts";
+import { listAccounts, createAccount, updateAccount, listAccountsSummary, recordAccountTransfer } from "./lib/accounts.ts";
 import { computeSalePricing } from "./lib/pricing.ts";
 import {
   listSales,
@@ -97,6 +97,10 @@ async function routeApi(method: string, path: string, body: Record<string, unkno
   if (method === "POST" && path === "/api/accounts") {
     const me = await requireUser(db, token);
     return createAccount(db, me, body ?? {});
+  }
+  if (method === "POST" && path === "/api/accounts/transfers") {
+    const me = await requireUser(db, token);
+    return recordAccountTransfer(db, me, body ?? {});
   }
 
   const accountMatch = path.match(/^\/api\/accounts\/(\d+)$/);

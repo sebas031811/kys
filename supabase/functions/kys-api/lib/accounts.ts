@@ -75,6 +75,50 @@ export async function createAccount(db: SupabaseClient, me: ReturnType<typeof us
   return { id: Number(data.id), nombre: data.nombre, tipo_cuenta: data.tipo_cuenta, saldo_inicial: num(data.saldo_inicial), notas: data.notas };
 }
 
+export async function recordAccountTransfer(
+  db: SupabaseClient,
+  me: ReturnType<typeof userOut>,
+  body: Record<string, unknown>,
+) {
+  if (me.rol !== "admin") throw new Error("Solo administrador");
+  const origenId = Number(body.cuenta_origen_id ?? body.from_account_id);
+  const destinoId = Number(body.cuenta_destino_id ?? body.to_account_id);
+  const monto = num(body.monto ?? body.amount);
+  if (!origenId || !destinoId) throw new Error("Cuenta origen y destino requeridas");
+  if (origenId === destinoId) throw new Error("Origen y destino deben ser distintas");
+  if (monto <= 0) throw new Error("Monto debe ser mayor que cero");
+
+  const { data: origen, error: e1 } = await db.from("cuentas").select("id").eq("id", origenId).maybeSingle();
+  const { data: destino, error: e2 } = await db.from("cuentas").select("id").eq("id", destinoId).maybeSingle();
+  if (e1?.message) throw new Error(e1.message);
+  if (e2?.message) throw new Error(e2.message);
+  if (!origen || !destino) throw new Error("Cuenta no encontrada");
+
+  const fechaRaw = body.fecha ?? body.date;
+  const fecha = fechaRaw != null && String(fechaRaw).trim() !== ""
+    ? String(fechaRaw).slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+  const notas = body.notas ?? body.notes ?? "";
+
+  const { data, error } = await db.from("transferencias_cuenta").insert({
+    cuenta_origen_id: origenId,
+    cuenta_destino_id: destinoId,
+    monto,
+    fecha,
+    notas,
+    registrado_por_id: me.id,
+  }).select("*").single();
+  if (error) throw new Error(error.message);
+  return {
+    id: Number(data.id),
+    cuenta_origen_id: Number(data.cuenta_origen_id),
+    cuenta_destino_id: Number(data.cuenta_destino_id),
+    monto: num(data.monto),
+    fecha: data.fecha ?? "",
+    notas: data.notas ?? "",
+  };
+}
+
 export async function updateAccount(db: SupabaseClient, me: ReturnType<typeof userOut>, id: number, body: Record<string, unknown>) {
   if (me.rol !== "admin") throw new Error("Solo administrador");
   const patch: Record<string, unknown> = {};
@@ -101,6 +145,9 @@ export async function listAccountsSummary(db: SupabaseClient) {
 
   const { data: sales } = await db.from("ventas").select("id, valor, cuenta_compra_id, estado_registro, producto, fecha_venta").neq("estado_registro", "cotizacion");
   const { data: payments } = await db.from("pagos").select("id, monto, cuenta_cobro_id, venta_id, fecha_pago, notas");
+  const { data: transfers } = await db.from("transferencias_cuenta").select("id, monto, cuenta_origen_id, cuenta_destino_id, fecha, notas");
+
+  const accountNameById = new Map(accounts.map((a) => [a.id, a.nombre]));
 
   const purchasedByAccount: Record<number, number> = {};
   const receivedByAccount: Record<number, number> = {};
@@ -134,6 +181,37 @@ export async function listAccountsSummary(db: SupabaseClient) {
       referencia: `Pago #${p.id} (venta ${p.venta_id})`,
       descripcion: p.notas ?? "",
     });
+  });
+
+  (transfers ?? []).forEach((t) => {
+    const amt = num(t.monto);
+    const ref = `Transferencia #${t.id}`;
+    const origenId = Number(t.cuenta_origen_id);
+    const destinoId = Number(t.cuenta_destino_id);
+    if (origenId) {
+      purchasedByAccount[origenId] = (purchasedByAccount[origenId] || 0) + amt;
+      const destName = accountNameById.get(destinoId) ?? destinoId;
+      movimientos.push({
+        cuenta_id: idToCanonical.get(origenId) ?? origenId,
+        tipo: "transferencia_salida",
+        monto: amt,
+        fecha: t.fecha ?? "",
+        referencia: ref,
+        descripcion: `A ${destName}${t.notas ? ` — ${t.notas}` : ""}`,
+      });
+    }
+    if (destinoId) {
+      receivedByAccount[destinoId] = (receivedByAccount[destinoId] || 0) + amt;
+      const origName = accountNameById.get(origenId) ?? origenId;
+      movimientos.push({
+        cuenta_id: idToCanonical.get(destinoId) ?? destinoId,
+        tipo: "transferencia_entrada",
+        monto: amt,
+        fecha: t.fecha ?? "",
+        referencia: ref,
+        descripcion: `Desde ${origName}${t.notas ? ` — ${t.notas}` : ""}`,
+      });
+    }
   });
 
   movimientos.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));

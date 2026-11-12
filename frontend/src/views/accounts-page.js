@@ -12,6 +12,29 @@ function accountTypeLabel(t) {
   return "Ambas";
 }
 
+function movementMeta(m) {
+  const tipo = m.tipo || m.kind;
+  if (tipo === "compra" || tipo === "purchase" || tipo === "transferencia_salida") {
+    const label = String(tipo).startsWith("transferencia") ? "Transferencia (salida)" : "Compra";
+    return { label, sign: "−" };
+  }
+  if (tipo === "cobro" || tipo === "collection" || tipo === "transferencia_entrada") {
+    const label = String(tipo).startsWith("transferencia") ? "Transferencia (entrada)" : "Cobro";
+    return { label, sign: "+" };
+  }
+  return { label: tipo || "—", sign: "" };
+}
+
+function accountOptions(accounts, selectedId) {
+  return accounts
+    .map((a) => {
+      const id = a.id;
+      const name = escHtml(a.nombre || a.name);
+      return `<option value="${id}" ${Number(selectedId) === Number(id) ? "selected" : ""}>${name}</option>`;
+    })
+    .join("");
+}
+
 export async function viewAccounts(root, focusAccountId) {
   const summary = await api("/api/accounts/summary");
   const accounts = summary.cuentas || summary.accounts || [];
@@ -25,8 +48,8 @@ export async function viewAccounts(root, focusAccountId) {
   }
 
   const adminToolbar = isAdmin
-    ? `<button type="button" id="openAccModal">Agregar cuenta</button>`
-    : `<p class="muted">Solo administrador puede crear cuentas.</p>`;
+    ? `<div class="toolbar-inline"><button type="button" id="openAccModal">Agregar cuenta</button><button type="button" class="secondary" id="openXferModal">Transferir entre cuentas</button></div>`
+    : `<p class="muted">Solo administrador puede crear cuentas o transferir.</p>`;
 
   const focusBanner = focusAcc
     ? `<div class="card account-focus" id="account-balance">
@@ -39,7 +62,7 @@ export async function viewAccounts(root, focusAccountId) {
       <div><p class="muted">Comprado</p><p class="text-warn">${money(focusAcc.total_comprado ?? focusAcc.total_purchased)}</p></div>
       <div><p class="muted">Tipo</p><p>${accountTypeLabel(focusAcc.tipo_cuenta || focusAcc.account_type)}</p></div>
     </div>
-    <p class="muted">Balance = saldo inicial + cobrado − comprado</p>
+    <p class="muted">Balance = saldo inicial + recibido − comprado (incluye transferencias entre cuentas)</p>
   </div>`
     : "";
 
@@ -67,9 +90,8 @@ export async function viewAccounts(root, focusAccountId) {
     .map((m) => {
       const accId = m.cuenta_id ?? m.account_id;
       const acc = accounts.find((a) => a.id === accId);
-      const tipo = (m.tipo || m.kind) === "compra" || m.kind === "purchase" ? "Compra" : "Cobro";
-      const sign = tipo === "Compra" ? "−" : "+";
-      return `<tr><td>${m.fecha || m.date || "—"}</td><td>${escHtml(acc?.nombre || acc?.name || accId)}</td><td>${tipo}</td><td>${sign} ${money(m.monto ?? m.amount)}</td><td>${escHtml(m.referencia || m.reference)}</td><td class="muted">${escHtml(m.descripcion || m.description)}</td></tr>`;
+      const { label, sign } = movementMeta(m);
+      return `<tr><td>${m.fecha || m.date || "—"}</td><td>${escHtml(acc?.nombre || acc?.name || accId)}</td><td>${label}</td><td>${sign} ${money(m.monto ?? m.amount)}</td><td>${escHtml(m.referencia || m.reference)}</td><td class="muted">${escHtml(m.descripcion || m.description)}</td></tr>`;
     })
     .join("");
 
@@ -77,16 +99,57 @@ export async function viewAccounts(root, focusAccountId) {
     el(`<div>
     ${focusBanner}
     <div class="card"><div class="card-head"><h1>${focusAcc ? "Resumen de cuentas" : "Cuentas"}</h1>${adminToolbar}</div>
-    <p class="muted">Comprado = valor de ventas con esa cuenta de compra. Recibido = cobros con esa cuenta. Balance = saldo inicial + recibido − comprado.</p>
+    <p class="muted">Comprado = ventas (cuenta de compra) + transferencias salientes. Recibido = cobros + transferencias entrantes. Balance = saldo inicial + recibido − comprado.</p>
     ${tableScroll(`<table class="data-table table-spaced"><thead><tr>
       <th>Cuenta</th><th>Tipo</th><th>Comprado</th><th>Recibido</th><th>Saldo inicial</th><th>Balance</th><th></th>${isAdmin ? "<th></th>" : ""}
     </tr></thead><tbody>${balanceRows || `<tr><td colspan=${isAdmin ? 8 : 7} class=muted>Sin cuentas</td></tr>`}</tbody></table>`)}</div>
     <div class="card"><h2>${focusAcc ? `Movimientos — ${escHtml(focusAcc.nombre || focusAcc.name)}` : "Movimientos"}</h2>
     ${tableScroll(`<table class="data-table"><thead><tr><th>Fecha</th><th>Cuenta</th><th>Tipo</th><th>Valor</th><th>Ref</th><th>Detalle</th></tr></thead>
-    <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (asigna cuenta en ventas y cobros)</td></tr>"}</tbody></table>`)}</div></div>`),
+    <tbody>${movementRows || "<tr><td colspan=6 class=muted>Sin movimientos (ventas, cobros o transferencias)</td></tr>"}</tbody></table>`)}</div></div>`),
   );
 
   wireDataTable(root, { searchPlaceholder: "Buscar…" });
+
+  const openXferBtn = root.querySelector("#openXferModal");
+  if (openXferBtn) {
+    const defaultFrom = focusId && accounts.some((a) => Number(a.id) === focusId) ? focusId : "";
+    const today = new Date().toISOString().slice(0, 10);
+    openXferBtn.onclick = () => {
+      openModal(
+        "Transferir entre cuentas",
+        `<p class="muted">Sale de una cuenta y entra en la otra. Quedan dos líneas en movimientos (salida y entrada).</p>
+        <div class="grid2">
+          <label>Desde (origen)<select id="xferFrom"><option value="">—</option>${accountOptions(accounts, defaultFrom)}</select></label>
+          <label>Hacia (destino)<select id="xferTo"><option value="">—</option>${accountOptions(accounts, "")}</select></label>
+          <label>Monto<input id="xferAmt" type="number" min="0.01" step="0.01"/></label>
+          <label>Fecha<input id="xferDate" type="date" value="${today}"/></label>
+          <label>Notas (opcional)<input id="xferNotes"/></label>
+        </div>
+        <button type="button" id="saveXfer">Registrar transferencia</button>
+        <p class="error" id="xferErr"></p>`,
+      );
+      const body = modalBody();
+      body.querySelector("#saveXfer").onclick = async () => {
+        try {
+          await api("/api/accounts/transfers", {
+            method: "POST",
+            body: JSON.stringify({
+              cuenta_origen_id: Number(body.querySelector("#xferFrom").value),
+              cuenta_destino_id: Number(body.querySelector("#xferTo").value),
+              monto: Number(body.querySelector("#xferAmt").value || 0),
+              fecha: body.querySelector("#xferDate").value,
+              notas: body.querySelector("#xferNotes").value.trim(),
+            }),
+          });
+          closeModal();
+          invalidateCuentas();
+          render();
+        } catch (e) {
+          body.querySelector("#xferErr").textContent = e.message;
+        }
+      };
+    };
+  }
 
   const openAccBtn = root.querySelector("#openAccModal");
   if (openAccBtn) {

@@ -45,4 +45,13 @@ var KYS_HEADERS = {
     KYS_FIELDS.PAGO.fecha_pago,
     KYS_FIELDS.PAGO.notas,
   ],
+  TransferenciasCuenta: [
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.id,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.cuenta_origen_id,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.cuenta_destino_id,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.monto,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.fecha,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.notas,
+    KYS_FIELDS.TRANSFERENCIA_CUENTA.registrado_por_id,
+  ],
 };
