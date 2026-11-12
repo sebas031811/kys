@@ -1,11 +1,52 @@
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #0f1419;
   --card: #1a2332;
   --text: #e8eef5;
   --muted: #8b9cb3;
   --accent: #3d8bfd;
+  --accent-hover: #6eb0ff;
   --ok: #3dd68c;
   --warn: #f5a524;
+  --danger: #f07178;
+  --error: #ff7b7b;
+  --border: #2a3545;
+  --border-strong: #3a4a61;
+  --surface: #121a24;
+  --surface-muted: #2a3545;
+  --backdrop: rgba(0, 0, 0, 0.65);
+  --loading-scrim: rgba(15, 20, 25, 0.55);
+  --shadow: rgba(0, 0, 0, 0.35);
+  --row-focus: rgba(61, 139, 253, 0.08);
+  --row-pay-ok: rgba(61, 214, 140, 0.14);
+  --row-pay-late: rgba(240, 113, 120, 0.14);
+  --row-pay-due: rgba(245, 165, 36, 0.16);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eef1f6;
+  --card: #ffffff;
+  --text: #15202b;
+  --muted: #5c6b7f;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --ok: #059669;
+  --warn: #d97706;
+  --danger: #dc2626;
+  --error: #b91c1c;
+  --border: #d5dde8;
+  --border-strong: #b8c4d4;
+  --surface: #f8fafc;
+  --surface-muted: #e8edf4;
+  --backdrop: rgba(15, 23, 42, 0.45);
+  --loading-scrim: rgba(238, 241, 246, 0.72);
+  --shadow: rgba(15, 23, 42, 0.12);
+  --row-focus: rgba(37, 99, 235, 0.1);
+  --row-pay-ok: rgba(5, 150, 105, 0.12);
+  --row-pay-late: rgba(220, 38, 38, 0.1);
+  --row-pay-due: rgba(217, 119, 6, 0.14);
 }
 
 * {
@@ -46,8 +87,8 @@ a.dash-action {
   font-weight: 600;
   text-decoration: none;
   text-align: center;
-  border: 1px solid #3a4a61;
-  background: #2a3545;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
@@ -97,8 +138,8 @@ a.dash-action--primary {
   display: block;
   padding: 0.85rem 1rem;
   border-radius: 10px;
-  border: 1px solid #2a3545;
-  background: #121a24;
+  border: 1px solid var(--border);
+  background: var(--surface);
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s;
@@ -139,7 +180,7 @@ a.dash-action--primary {
 }
 
 .balance-neg {
-  color: #f07178;
+  color: var(--danger);
 }
 
 .account-focus .stat {
@@ -153,11 +194,11 @@ a.dash-action--primary {
 }
 
 tr.row-focus {
-  background: rgba(61, 139, 253, 0.08);
+  background: var(--row-focus);
 }
 
 tr.row-pay-ok {
-  background: rgba(61, 214, 140, 0.14);
+  background: var(--row-pay-ok);
 }
 
 tr.row-pay-ok td:first-child {
@@ -165,15 +206,15 @@ tr.row-pay-ok td:first-child {
 }
 
 tr.row-pay-late {
-  background: rgba(240, 113, 120, 0.14);
+  background: var(--row-pay-late);
 }
 
 tr.row-pay-late td:first-child {
-  box-shadow: inset 3px 0 0 #f07178;
+  box-shadow: inset 3px 0 0 var(--danger);
 }
 
 tr.row-pay-due {
-  background: rgba(245, 165, 36, 0.16);
+  background: var(--row-pay-due);
 }
 
 tr.row-pay-due td:first-child {
@@ -192,7 +233,7 @@ body.kys-modal-open {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.65);
+  background: var(--backdrop);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -208,7 +249,7 @@ body.kys-modal-open {
   display: flex;
   flex-direction: column;
   background: var(--card);
-  border: 1px solid #2a3545;
+  border: 1px solid var(--border);
   border-radius: 12px;
   margin: auto;
 }
@@ -219,7 +260,7 @@ body.kys-modal-open {
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.85rem 1rem;
-  border-bottom: 1px solid #2a3545;
+  border-bottom: 1px solid var(--border);
 }
 
 .kys-modal__head h2 {
@@ -234,7 +275,7 @@ body.kys-modal-open {
   font-size: 1.35rem;
   line-height: 1;
   background: transparent;
-  border: 1px solid #3a4a61;
+  border: 1px solid var(--border-strong);
   color: var(--muted);
 }
 
@@ -319,11 +360,32 @@ button.btn-link {
 }
 
 button.btn-link:hover {
-  color: #6eb0ff;
+  color: var(--accent-hover);
 }
 
 .app-header {
   margin-bottom: 0.5rem;
+}
+
+.app-header__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.app-header__title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+button.theme-toggle {
+  width: auto;
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .app-header .muted {
@@ -337,7 +399,7 @@ nav {
   gap: 0.75rem;
   margin-bottom: 1.25rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid #2a3545;
+  border-bottom: 1px solid var(--border);
 }
 
 nav a {
@@ -356,7 +418,7 @@ nav a.nav-active {
 }
 
 .text-late {
-  color: #f07178;
+  color: var(--danger);
 }
 
 .text-warn {
@@ -453,7 +515,7 @@ th.th-sort-desc::after {
   border-radius: 12px;
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
-  border: 1px solid #2a3545;
+  border: 1px solid var(--border);
 }
 
 h1,
@@ -491,8 +553,8 @@ button {
   margin-top: 0.25rem;
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
-  border: 1px solid #3a4a61;
-  background: #121a24;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -505,7 +567,9 @@ button {
 }
 
 button.secondary {
-  background: #2a3545;
+  background: var(--surface-muted);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
 }
 
 .grid2 {
@@ -529,7 +593,7 @@ table {
 th,
 td {
   padding: 0.45rem 0.35rem;
-  border-bottom: 1px solid #2a3545;
+  border-bottom: 1px solid var(--border);
   text-align: left;
 }
 
@@ -549,7 +613,7 @@ td.num {
 }
 
 .error {
-  color: #ff7b7b;
+  color: var(--error);
   margin-top: 0.5rem;
 }
 
@@ -560,7 +624,7 @@ td.num {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 20, 25, 0.55);
+  background: var(--loading-scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -575,9 +639,9 @@ td.num {
   gap: 0.75rem;
   padding: 1.25rem 1.5rem;
   background: var(--card);
-  border: 1px solid #2a3545;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 40px var(--shadow);
   font-size: 0.95rem;
   color: var(--text);
 }
@@ -585,7 +649,7 @@ td.num {
 .kys-spinner {
   width: 2.25rem;
   height: 2.25rem;
-  border: 3px solid #2a3545;
+  border: 3px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: kys-spin 0.75s linear infinite;

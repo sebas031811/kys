@@ -3,6 +3,7 @@ import { closeModal } from "./modal.js";
 import { escHtml } from "./format.js";
 import { state, loadUser, setRender } from "./app-context.js";
 import { el, navHtml, wireNavLinks } from "./dom.js";
+import { applyThemeFromUser, wireThemeToggle } from "./theme.js";
 import { viewLogin } from "./views/login.js";
 import { viewDashboard } from "./views/dashboard.js";
 import { viewSales, viewSaleDetail, viewNewSale } from "./views/sales.js";
@@ -43,6 +44,7 @@ async function render() {
   const app = document.getElementById("app");
   app.innerHTML = navHtml();
   wireNavLinks(app);
+  wireThemeToggle(app);
   const logout = document.getElementById("logout");
   if (logout) {
     logout.onclick = async (e) => {
@@ -85,5 +87,8 @@ setRender(render);
 
 export function startApp() {
   window.addEventListener("hashchange", render);
-  loadUser().then(render);
+  loadUser().then(() => {
+    applyThemeFromUser(state.user);
+    render();
+  });
 }

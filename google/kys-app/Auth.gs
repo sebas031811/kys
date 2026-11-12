@@ -66,7 +66,20 @@ function userOut_(row) {
     nombre_visible: nombre,
     rol: rol,
     activo: String(activo) !== 'false',
+    tema: String(row.tema) === 'light' ? 'light' : 'dark',
   };
+}
+
+function patchUserPrefs_(token, body) {
+  var me = requireUser_(token);
+  var tema = body && body.tema === 'light' ? 'light' : 'dark';
+  var sh = getSheet_(KYS_CONFIG.SHEETS.USERS);
+  var u = KYS_FIELDS.USUARIO;
+  var patch = {};
+  patch[u.tema] = tema;
+  var row = updateById_(sh, me.id, patch);
+  CacheService.getScriptCache().remove('kys_user_profile_' + String(me.email).toLowerCase());
+  return userOut_(row);
 }
 
 function listUsers_(token) {

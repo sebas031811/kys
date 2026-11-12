@@ -1,4 +1,4 @@
-import { adminClient, authLogin, authMe, destroySession, requireUser, userOut } from "./lib/auth.ts";
+import { adminClient, authLogin, authMe, destroySession, patchUserTheme, requireUser, userOut } from "./lib/auth.ts";
 import { listClients, createClient, parseClientRequest } from "./lib/clients.ts";
 import { listAccounts, createAccount, updateAccount, listAccountsSummary, recordAccountTransfer } from "./lib/accounts.ts";
 import { computeSalePricing } from "./lib/pricing.ts";
@@ -51,6 +51,10 @@ async function routeApi(method: string, path: string, body: Record<string, unkno
   }
   if (method === "GET" && path === "/api/auth/me") {
     return authMe(db, token);
+  }
+  if (method === "PATCH" && path === "/api/auth/me") {
+    const me = await requireUser(db, token);
+    return patchUserTheme(db, me.id, body?.tema);
   }
   if (method === "GET" && path === "/api/auth/users") {
     const me = await requireUser(db, token);

@@ -6,6 +6,7 @@ var KYS_HEADERS = {
     KYS_FIELDS.USUARIO.nombre_visible,
     KYS_FIELDS.USUARIO.rol,
     KYS_FIELDS.USUARIO.activo,
+    KYS_FIELDS.USUARIO.tema,
   ],
   Clientes: [
     KYS_FIELDS.CLIENTE.id,

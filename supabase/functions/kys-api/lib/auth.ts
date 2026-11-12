@@ -25,7 +25,15 @@ export function userOut(row: Record<string, unknown>) {
     es_vendedor: rol === "seller",
     activo: row.activo !== false,
     valor_pagado: row.comision_pagada != null ? Number(row.comision_pagada) : 0,
+    tema: row.tema === "light" ? "light" : "dark",
   };
+}
+
+export async function patchUserTheme(db: SupabaseClient, userId: number, tema: unknown) {
+  const t = tema === "light" ? "light" : "dark";
+  const { data, error } = await db.from("usuarios").update({ tema: t }).eq("id", userId).select("*").single();
+  if (error) throw new Error(error.message);
+  return userOut(data);
 }
 
 export async function authLogin(db: SupabaseClient, email: string, password: string) {

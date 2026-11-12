@@ -29,6 +29,9 @@ function routeApi_(method, path, body, token) {
   if (method === 'GET' && path === '/api/auth/me') {
     return authMe_(token);
   }
+  if (method === 'PATCH' && path === '/api/auth/me') {
+    return patchUserPrefs_(token, body);
+  }
   if (method === 'GET' && path === '/api/auth/users') {
     return listUsers_(token);
   }

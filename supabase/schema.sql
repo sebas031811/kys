@@ -9,7 +9,8 @@ create table if not exists usuarios (
   nombre_visible text not null,
   rol text not null default 'seller' check (rol in ('admin', 'seller')),
   activo boolean not null default true,
-  comision_pagada numeric not null default 0
+  comision_pagada numeric not null default 0,
+  tema text not null default 'dark' check (tema in ('dark', 'light'))
 );
 
 create table if not exists sesiones (

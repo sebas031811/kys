@@ -1,5 +1,6 @@
 import { api } from "../api.js";
-import { render, loadUser } from "../app-context.js";
+import { render, loadUser, state } from "../app-context.js";
+import { applyThemeFromUser } from "../theme.js";
 import { el } from "../dom.js";
 
 export async function viewLogin(root) {
@@ -20,6 +21,7 @@ export async function viewLogin(root) {
         }),
       });
       await loadUser();
+      applyThemeFromUser(state.user);
       location.hash = "#/dashboard";
       render();
     } catch (e) {

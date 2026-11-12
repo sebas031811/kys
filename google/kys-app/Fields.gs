@@ -7,6 +7,7 @@ var KYS_FIELDS = {
     nombre_visible: 'nombre_visible',
     rol: 'rol',
     activo: 'activo',
+    tema: 'tema',
   },
   CLIENTE: {
     id: 'id',

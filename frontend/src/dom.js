@@ -27,7 +27,12 @@ export function navHtml() {
        ${state.user.rol === "admin" ? navLink("#/vendedores", "Vendedores", "vendedores") : ""}
        <a href="#" id="logout">Salir (${escHtml(state.user.nombre_visible)} · ${escHtml(rolLabel(state.user.rol))})</a>`
     : navLink("#/login", "Entrar", "login");
-  return `<header class="app-header"><strong>KYS</strong> <span class="muted">ventas · cuotas · clientes</span></header><nav>${links}</nav>`;
+  return `<header class="app-header">
+    <div class="app-header__row">
+      <div class="app-header__title"><strong>KYS</strong> <span class="muted">ventas · cuotas · clientes</span></div>
+      <button type="button" class="theme-toggle secondary" id="theme-toggle" aria-label="Cambiar tema"></button>
+    </div>
+  </header><nav>${links}</nav>`;
 }
 
 export function wireNavLinks(app) {
