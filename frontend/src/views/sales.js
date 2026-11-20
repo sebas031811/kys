@@ -48,6 +48,7 @@ function saleDetailSummaryHtml(sale, isQuote, isAdmin) {
     <h1>${isQuote ? "Cotización" : "Venta"} #${sale.id}</h1>
     <p><strong>${escHtml(sale.producto || "")}</strong></p>
     <p class="muted">${escHtml(sale.cliente?.nombre || "")}${sale.cliente?.telefono ? ` · ${escHtml(sale.cliente.telefono)}` : ""}</p>
+    <p class="muted">Vendedor ${escHtml(sale.vendedor?.nombre_visible || "—")}</p>
     <p class="muted">${saleCuotasLine(sale)}</p>
     <p>Abonado ${money(sale.valor_abonado)} · Pendiente ${money(sale.pendiente)} · Total ${money(sale.total)}</p>
     <p class="muted">Ganancia ${money(sale.ganancia)} · Comisión vendedor ${sale.porcentaje_comision ?? 30}%</p>
@@ -147,14 +148,27 @@ function openPaymentModal(saleId, sale, accOpts, today) {
   };
 }
 
-function saleEditFormHtml(sale, accounts, isQuote) {
+function sellerSelectHtml(users, currentId) {
+  const current = currentId != null ? Number(currentId) : null;
+  const options = users
+    .filter((u) => u.rol === "seller" || (current != null && Number(u.id) === current))
+    .map((u) => {
+      const selected = current != null && Number(u.id) === current ? " selected" : "";
+      return `<option value="${u.id}"${selected}>${escHtml(u.nombre_visible)}</option>`;
+    })
+    .join("");
+  return `<label>Vendedor<select id="vendedorId"><option value="">—</option>${options}</select></label>`;
+}
+
+function saleEditFormHtml(sale, accounts, isQuote, users = []) {
   const dateFields = isQuote
     ? `<label>Fecha cotización<input id="fechaCotizacion" type="date" value="${sale.fecha_cotizacion || ""}"/></label>`
     : `<label>Fecha venta<input id="fechaVenta" type="date" value="${sale.fecha_venta || ""}"/>
       <label>Fecha entrega<input id="fechaEntrega" type="date" value="${sale.fecha_entrega || ""}"/></label>`;
   const adminFields =
     state.user?.rol === "admin"
-      ? `<label>Cuota tarjeta<input id="cuotaTarjeta" value="${escAttr(sale.cuota_tarjeta)}"/></label>`
+      ? `${sellerSelectHtml(users, sale.vendedor_id)}
+      <label>Cuota tarjeta<input id="cuotaTarjeta" value="${escAttr(sale.cuota_tarjeta)}"/></label>`
       : "";
   return `<p class="muted">${escHtml(sale.cliente?.nombre || "")} · Abonado ${money(sale.valor_abonado)} · Pendiente ${money(sale.pendiente)}</p>
     <label>Producto<input id="producto" value="${escAttr(sale.producto)}"/></label>
@@ -208,6 +222,8 @@ function buildSalePatchBody(root) {
   if (fechaCot?.value) body.fecha_cotizacion = fechaCot.value;
   const cuotaTarjeta = root.querySelector("#cuotaTarjeta");
   if (cuotaTarjeta) body.cuota_tarjeta = cuotaTarjeta.value || null;
+  const sellerEl = root.querySelector("#vendedorId");
+  if (sellerEl) body.vendedor_id = sellerEl.value ? Number(sellerEl.value) : null;
   return body;
 }
 
@@ -280,6 +296,7 @@ export async function viewSales(root) {
       const estadoTxt = statusLabel(s);
       const clienteNombre = s.cliente?.nombre || String(s.cliente_id ?? "");
       const cuotasSort = `${s.cuotas_pagadas ?? 0}/${s.num_cuotas ?? 0}`;
+      const cuotaValor = Number(s.cuota) || 0;
       return `<tr class="${rowClass}"
         data-estado="${escAttr(estadoTxt)}"
         data-fecha="${escAttr(fechaSort)}"
@@ -287,14 +304,15 @@ export async function viewSales(root) {
         data-producto="${escAttr(s.producto || "")}"
         data-vendedor="${escAttr(vendedorName)}"
         data-cuotas="${escAttr(cuotasSort)}"
+        data-valor-cuota="${cuotaValor}"
         data-prox-vence="${escAttr(s.proximo_vencimiento || "")}"
         data-dia="${escAttr(String(s.fecha_cuota ?? ""))}"
         data-ult-pago="${escAttr(s.fecha_ultimo_pago || "")}"
         data-pendiente="${Number(s.pendiente) || 0}"
-      ><td>${estadoTxt}</td><td>${escHtml(fechaDisplay)}</td><td>${escHtml(clienteNombre)}</td><td>${escHtml(s.producto || "")}</td><td>${vendedorHtml}</td><td class="num">${cuotasHtml}</td>${venceCell}<td class="num">${escHtml(diaCell)}</td><td>${ultHtml}</td><td class="num">${money(s.pendiente)}</td><td class="actions-cell">${actions}</td></tr>`;
+      ><td>${estadoTxt}</td><td>${escHtml(fechaDisplay)}</td><td>${escHtml(clienteNombre)}</td><td>${escHtml(s.producto || "")}</td><td>${vendedorHtml}</td><td class="num">${cuotasHtml}</td><td class="num">${money(cuotaValor)}</td>${venceCell}<td class="num">${escHtml(diaCell)}</td><td>${ultHtml}</td><td class="num">${money(s.pendiente)}</td><td class="actions-cell">${actions}</td></tr>`;
     })
     .join("");
-  const colspan = showVenceCol ? 11 : 10;
+  const colspan = showVenceCol ? 12 : 11;
   const venceHead = showVenceCol
     ? `<th class="th-sortable" data-sort="prox-vence" tabindex="0" role="button">Cuotas en rango</th>`
     : "";
@@ -324,6 +342,7 @@ export async function viewSales(root) {
       <th class="th-sortable" data-sort="producto" tabindex="0" role="button">Producto</th>
       <th class="th-sortable" data-sort="vendedor" tabindex="0" role="button">Vendedor</th>
       <th class="th-sortable" data-sort="cuotas" tabindex="0" role="button">Cuotas</th>
+      <th class="th-sortable" data-sort="valor-cuota" data-sort-type="number" tabindex="0" role="button">Valor cuota</th>
       ${venceHead}
       <th class="th-sortable" data-sort="dia" tabindex="0" role="button">Día pago</th>
       <th class="th-sortable" data-sort="ult-pago" tabindex="0" role="button">Últ. pago</th>
@@ -360,7 +379,10 @@ export async function viewSales(root) {
 
 export async function viewSaleDetail(root, id) {
   const isAdmin = state.user?.rol === "admin";
-  const sale = await api(`/api/sales/${id}`);
+  const [sale, users] = await Promise.all([
+    api(`/api/sales/${id}`),
+    isAdmin ? api("/api/auth/users") : Promise.resolve([]),
+  ]);
   const accounts = sale.cuentas || (await getCuentas(api));
   const instRows = [...(sale.cuotas || [])]
     .sort((a, b) => a.numero_cuota - b.numero_cuota)
@@ -460,7 +482,10 @@ export async function viewSaleDetail(root, id) {
   });
 
   const openEditModal = () => {
-    openModal(isQuote ? `Editar cotización #${sale.id}` : `Editar venta #${sale.id}`, saleEditFormHtml(sale, accounts, isQuote));
+    openModal(
+      isQuote ? `Editar cotización #${sale.id}` : `Editar venta #${sale.id}`,
+      saleEditFormHtml(sale, accounts, isQuote, users),
+    );
     const body = modalBody();
     wireSaleEditForm(body);
     body.querySelector("#saveSaleBtn").onclick = async () => {

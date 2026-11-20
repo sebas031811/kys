@@ -177,6 +177,9 @@ export async function getSale(db: SupabaseClient, me: ReturnType<typeof userOut>
   if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
 
   const { data: cliente } = await db.from("clientes").select("*").eq("id", row.cliente_id).maybeSingle();
+  const { data: vendedorRow } = row.vendedor_id
+    ? await db.from("usuarios").select("id, nombre_visible").eq("id", row.vendedor_id).maybeSingle()
+    : { data: null };
   const [{ data: cuotasRows }, { data: pagosRows }] = await Promise.all([
     db.from("cuotas").select("*").eq("venta_id", saleId).order("numero_cuota"),
     db.from("pagos").select("*").eq("venta_id", saleId).order("fecha_pago").order("id"),
@@ -184,6 +187,9 @@ export async function getSale(db: SupabaseClient, me: ReturnType<typeof userOut>
   const cuotas = (cuotasRows ?? []).map(installmentOut);
   const { data: cuentas } = await db.from("cuentas").select("*").order("nombre");
   const sale = saleOut(row, cliente, cuotas);
+  sale.vendedor = vendedorRow
+    ? { id: Number(vendedorRow.id), nombre_visible: String(vendedorRow.nombre_visible ?? "") }
+    : null;
   sale.pagos = (pagosRows ?? []).map(paymentOut);
   if (sale.cuotas_pagadas == null) {
     sale.cuotas_pagadas = cuotas.filter((c) => c.estado === "pagada").length;
@@ -257,6 +263,7 @@ export async function patchSale(db: SupabaseClient, me: ReturnType<typeof userOu
   const { data: row, error: fe } = await db.from("ventas").select("*").eq("id", saleId).maybeSingle();
   if (fe || !row) throw new Error("Venta no encontrada");
   if (me.rol === "seller" && Number(row.vendedor_id) !== me.id) throw new Error("Acceso denegado");
+  if (me.rol !== "admin") delete body.vendedor_id;
 
   const pricing = computeSalePricing(ventaPricingInput(row, body));
   const collected = num(row.valor_abonado);

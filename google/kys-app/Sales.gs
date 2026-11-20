@@ -74,10 +74,25 @@ function getSale_(token, saleId) {
   var sellerId = row.vendedor_id || row.seller_id;
   if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
   var sale = saleOut_(row, true);
+  sale.vendedor = sellerSummary_(sale.vendedor_id);
   sale.fecha_ultimo_pago = lastPaymentDateForSale_(saleId);
   sale.pagos = paymentsForSale_(saleId).map(paymentOut_);
   sale.cuentas = listAccounts_();
   return sale;
+}
+
+function sellerSummary_(sellerId) {
+  if (!sellerId) return null;
+  var users = sheetToObjects_(getSheet_(KYS_CONFIG.SHEETS.USERS));
+  for (var i = 0; i < users.length; i++) {
+    if (Number(users[i].id) === Number(sellerId)) {
+      return {
+        id: Number(users[i].id),
+        nombre_visible: users[i].nombre_visible || users[i].display_name || '',
+      };
+    }
+  }
+  return null;
 }
 
 function paymentOut_(row) {
@@ -191,6 +206,10 @@ function updateSale_(token, saleId, body) {
     if (!row) throw new Error('Venta no encontrada');
     var sellerId = row.vendedor_id || row.seller_id;
     if (me.rol === 'seller' && Number(sellerId) !== Number(me.id)) throw new Error('Acceso denegado');
+    if (me.rol !== 'admin') {
+      delete body.vendedor_id;
+      delete body.seller_id;
+    }
 
     var collected = totalPaymentsForSale_(saleId);
     row = patchVentaRow_(row, body);

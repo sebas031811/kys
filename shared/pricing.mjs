@@ -6,6 +6,15 @@ export function normalizePercentRate(rate) {
   return r > 1 ? r / 100 : r;
 }
 
+const CUOTA_STEP = 500;
+
+/** Nearest multiple of 500. */
+export function roundCuota(amount) {
+  const value = num(amount);
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value / CUOTA_STEP) * CUOTA_STEP;
+}
+
 export function computeSalePricing(payload) {
   const valor = num(payload.valor ?? payload.cost_price);
   const rate = normalizePercentRate(payload.porcentaje ?? payload.margin_rate);
@@ -22,9 +31,9 @@ export function computeSalePricing(payload) {
   if (periodo === "Contado" || count <= 1) {
     cuota = payload.cuota != null ? num(payload.cuota) : total;
   } else if (payload.cuota != null) {
-    cuota = num(payload.cuota);
+    cuota = roundCuota(payload.cuota);
   } else {
-    cuota = count ? Math.round(financiado / count) : financiado;
+    cuota = roundCuota(financiado / count);
   }
 
   return { ganancia, total, cuota, saldo_financiado: financiado };
